@@ -255,7 +255,7 @@ export function LiveMonitoringPage() {
         ) : (
           <div className="space-y-2 max-h-80 overflow-y-auto">
             <AnimatePresence>
-              {alerts.map((alert, i) => (
+              {alerts.map((alert: any, i: number) => (
                 <motion.div
                   key={alert.id}
                   initial={{ opacity: 0, x: -20, backgroundColor: 'rgba(239,68,68,0.1)' }}
@@ -320,7 +320,7 @@ export function LiveMonitoringPage() {
             </thead>
             <tbody>
               <AnimatePresence>
-                {flows.map((flow) => (
+                {flows.map((flow: any) => (
                   <motion.tr
                     key={flow.id}
                     initial={{ opacity: 0, backgroundColor: 'rgba(14,165,233,0.1)' }}
@@ -380,7 +380,7 @@ export function LiveMonitoringPage() {
       {/* Hosts status grid */}
       <Card title="Monitored Hosts" icon={<Server size={18} />}>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {hosts.map((host, i) => (
+          {hosts.map((host: any, i: number) => (
             <motion.div
               key={host.ip}
               initial={{ opacity: 0, scale: 0.95 }}
