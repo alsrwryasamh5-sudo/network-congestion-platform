@@ -14,6 +14,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { TopCulpritHostsPage } from './pages/TopCulpritHostsPage';
+import { LiveMonitoringPage } from './pages/LiveMonitoringPage';
 import { SimplePage, NotFoundPage, MaintenancePage } from './pages/SimplePage';
 import {
   Bell, Database, Settings, User, Heart, Search, FileText,
@@ -80,6 +81,7 @@ export default function App() {
 
         {/* Protected */}
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/live" element={<ProtectedRoute><LiveMonitoringPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
         <Route path="/congestion" element={<ProtectedRoute><PredictionPage /></ProtectedRoute>} />
         <Route path="/root-cause" element={<ProtectedRoute><RootCausePage /></ProtectedRoute>} />

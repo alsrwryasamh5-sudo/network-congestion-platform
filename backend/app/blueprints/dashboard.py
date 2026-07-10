@@ -16,6 +16,7 @@ from app.models.notification import Notification
 from app.models.system_log import ActivityLog
 from app.utils.errors import NotFoundError
 from app.services.intelligence_data import get_full_intelligence_report
+from app.services.live_monitor import get_live_network_status
 from ._shared import auth_required
 
 dashboard_bp = Blueprint("dashboard", __name__, url_prefix="/api/v1/dashboard")
@@ -362,5 +363,19 @@ def intelligence():
     return {
         "success": True,
         "data": get_full_intelligence_report(),
+    }
+
+
+@dashboard_bp.route("/live", methods=["GET"])
+@auth_required()
+def live_monitoring():
+    """
+    Real-time live network monitoring.
+    Returns current network status with recent flows, alerts, and host states.
+    Call this endpoint every 3-5 seconds for live updates.
+    """
+    return {
+        "success": True,
+        "data": get_live_network_status(),
     }
 
