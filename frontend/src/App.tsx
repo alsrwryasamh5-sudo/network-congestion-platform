@@ -11,9 +11,10 @@ import { RootCausePage } from './pages/RootCausePage';
 import { TrainingPage } from './pages/TrainingPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { SimplePage, NotFoundPage, MaintenancePage } from './pages/SimplePage';
+import { TopCulpritHostsPage } from './pages/TopCulpritHostsPage';
 import {
   Bell, Database, Settings, User, Heart, Search, FileText,
-  AlertTriangle, Users, Info, HelpCircle, MessageSquare,
+  AlertTriangle, Users, Info, HelpCircle, MessageSquare, Server,
 } from 'lucide-react';
 
 function ProtectedRoute({ children }: { children: any }) {
@@ -45,6 +46,7 @@ export default function App() {
       <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
       <Route path="/congestion" element={<ProtectedRoute><PredictionPage /></ProtectedRoute>} />
       <Route path="/root-cause" element={<ProtectedRoute><RootCausePage /></ProtectedRoute>} />
+      <Route path="/top-culprits" element={<ProtectedRoute><TopCulpritHostsPage /></ProtectedRoute>} />
       <Route path="/shap" element={<ProtectedRoute><ShapPage /></ProtectedRoute>} />
       <Route path="/performance" element={<ProtectedRoute><ShapPage /></ProtectedRoute>} />
       <Route path="/prediction" element={<ProtectedRoute><PredictionPage /></ProtectedRoute>} />

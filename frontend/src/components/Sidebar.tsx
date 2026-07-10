@@ -5,7 +5,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import {
   LayoutDashboard, Activity, Network, AlertTriangle, Search, GitBranch,
   BarChart3, Brain, Database, FileText, Bell, Users, Settings, User,
-  Heart, LogOut, ChevronLeft, ChevronRight, Globe, Zap,
+  Heart, LogOut, ChevronLeft, ChevronRight, Globe, Zap, Server, Crown,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { RootState, AppDispatch } from '../store';
@@ -31,6 +31,7 @@ export function Sidebar() {
         { to: '/analytics', icon: <Activity size={18} />, label: t('nav.analytics') },
         { to: '/congestion', icon: <Network size={18} />, label: t('nav.congestion') },
         { to: '/root-cause', icon: <AlertTriangle size={18} />, label: t('nav.rootCause') },
+        { to: '/top-culprits', icon: <Crown size={18} />, label: 'أكثر الأجهزة إسهاماً' },
         { to: '/shap', icon: <GitBranch size={18} />, label: t('nav.shap') },
         { to: '/performance', icon: <BarChart3 size={18} />, label: t('nav.performance') },
       ],

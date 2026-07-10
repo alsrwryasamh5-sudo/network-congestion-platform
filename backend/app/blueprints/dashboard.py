@@ -109,27 +109,151 @@ def overview():
 @dashboard_bp.route("/network-health", methods=["GET"])
 @auth_required()
 def network_health():
-    """Simulated network health metrics (in production, would come from real telemetry)."""
-    import random
-    rng = random.Random(42)
+    """
+    Network health metrics derived from actual predictions in the database.
+    Aggregates latency, jitter, bandwidth, packet loss from prediction inputs.
+    """
     now = datetime.now(timezone.utc)
 
-    # Generate 24 data points (hourly) for each metric
-    latency = [rng.gauss(45, 15) for _ in range(24)]
-    packet_loss = [max(0, rng.gauss(0.5, 0.3)) for _ in range(24)]
-    bandwidth = [rng.gauss(850, 100) for _ in range(24)]
-    jitter = [max(0, rng.gauss(8, 3)) for _ in range(24)]
-    hours = [(now - timedelta(hours=23 - i)).strftime("%H:00") for i in range(24)]
+    # Get predictions from the last 24 hours
+    since = now - timedelta(hours=24)
+    preds = (
+        Prediction.query
+        .filter(Prediction.created_at >= since)
+        .order_by(Prediction.created_at.asc())
+        .all()
+    )
+
+    # If no predictions, return empty structure
+    if not preds:
+        # Try to get older predictions (last 7 days) for demo
+        since_7d = now - timedelta(days=7)
+        preds = (
+            Prediction.query
+            .filter(Prediction.created_at >= since_7d)
+            .order_by(Prediction.created_at.asc())
+            .limit(500)
+            .all()
+        )
+
+    if not preds:
+        # Fallback: return zeros
+        labels = [(now - timedelta(hours=23 - i)).strftime("%H:00") for i in range(24)]
+        return {
+            "success": True,
+            "data": {
+                "labels": labels,
+                "latency_ms": [{"value": 0, "status": "normal"} for _ in range(24)],
+                "packet_loss_pct": [0] * 24,
+                "bandwidth_mbps": [0] * 24,
+                "jitter_ms": [0] * 24,
+                "current_health_score": 0,
+                "source": "no_data",
+            },
+        }
+
+    # Group predictions by hour (24 buckets)
+    hourly_buckets = {i: [] for i in range(24)}
+    for pred in preds:
+        if pred.created_at:
+            # Get hour offset from 23 hours ago
+            hours_ago = int((now - pred.created_at.replace(tzinfo=timezone.utc)).total_seconds() / 3600)
+            bucket = 23 - hours_ago
+            if 0 <= bucket < 24:
+                hourly_buckets[bucket].append(pred)
+
+    labels = []
+    latency_ms = []
+    packet_loss_pct = []
+    bandwidth_mbps = []
+    jitter_ms = []
+
+    for i in range(24):
+        time_label = (now - timedelta(hours=23 - i)).strftime("%H:00")
+        labels.append(time_label)
+
+        bucket_preds = hourly_buckets[i]
+        if not bucket_preds:
+            latency_ms.append({"value": 0, "status": "normal"})
+            packet_loss_pct.append(0)
+            bandwidth_mbps.append(0)
+            jitter_ms.append(0)
+            continue
+
+        # Extract metrics from prediction inputs
+        latencies = []
+        jitters = []
+        bandwidths = []
+        losses = []
+        for p in bucket_preds:
+            features = p.input_features or {}
+            # Compute delay (weighted IAT)
+            in_pkts = float(features.get("IN_PKTS", 0) or 0)
+            out_pkts = float(features.get("OUT_PKTS", 0) or 0)
+            total_pkts = in_pkts + out_pkts
+            if total_pkts > 0:
+                src_iat = float(features.get("SRC_TO_DST_IAT_AVG", 0) or 0)
+                dst_iat = float(features.get("DST_TO_SRC_IAT_AVG", 0) or 0)
+                delay = (src_iat * in_pkts + dst_iat * out_pkts) / total_pkts
+                latencies.append(delay)
+
+                src_std = float(features.get("SRC_TO_DST_IAT_STDDEV", 0) or 0)
+                dst_std = float(features.get("DST_TO_SRC_IAT_STDDEV", 0) or 0)
+                jitter = (src_std * in_pkts + dst_std * out_pkts) / total_pkts
+                jitters.append(jitter)
+
+                src_thru = float(features.get("SRC_TO_DST_AVG_THROUGHPUT", 0) or 0)
+                dst_thru = float(features.get("DST_TO_SRC_AVG_THROUGHPUT", 0) or 0)
+                # Convert to Mbps (throughput is in bytes/sec typically)
+                bw = (src_thru + dst_thru) * 8 / 1_000_000  # bytes/sec -> Mbps
+                bandwidths.append(bw)
+
+                ret_in = float(features.get("RETRANSMITTED_IN_PKTS", 0) or 0)
+                ret_out = float(features.get("RETRANSMITTED_OUT_PKTS", 0) or 0)
+                loss = (ret_in + ret_out) / (total_pkts + 1) * 100
+                losses.append(loss)
+
+        avg_latency = sum(latencies) / len(latencies) if latencies else 0
+        avg_jitter = sum(jitters) / len(jitters) if jitters else 0
+        avg_bw = sum(bandwidths) / len(bandwidths) if bandwidths else 0
+        avg_loss = sum(losses) / len(losses) if losses else 0
+
+        # Status based on thresholds
+        if avg_latency < 60:
+            status = "normal"
+        elif avg_latency < 150:
+            status = "warning"
+        else:
+            status = "critical"
+
+        latency_ms.append({"value": round(avg_latency, 2), "status": status})
+        packet_loss_pct.append(round(avg_loss, 2))
+        bandwidth_mbps.append(round(avg_bw, 2))
+        jitter_ms.append(round(avg_jitter, 2))
+
+    # Current health score (0-100, higher = better)
+    avg_latency_now = latency_ms[-1]["value"] if latency_ms else 0
+    avg_loss_now = packet_loss_pct[-1] if packet_loss_pct else 0
+    avg_jitter_now = jitter_ms[-1] if jitter_ms else 0
+
+    # Health score formula: start at 100, subtract for bad metrics
+    health_score = 100.0
+    health_score -= min(avg_latency_now / 3, 40)  # latency penalty
+    health_score -= min(avg_loss_now * 5, 30)      # loss penalty
+    health_score -= min(avg_jitter_now / 5, 30)    # jitter penalty
+    health_score = max(0, round(health_score, 1))
 
     return {
         "success": True,
         "data": {
-            "labels": hours,
-            "latency_ms": [{"value": round(v, 2), "status": "normal" if v < 60 else "warning" if v < 100 else "critical"} for v in latency],
-            "packet_loss_pct": [round(v, 2) for v in packet_loss],
-            "bandwidth_mbps": [round(v, 2) for v in bandwidth],
-            "jitter_ms": [round(v, 2) for v in jitter],
-            "current_health_score": round(rng.uniform(75, 95), 1),
+            "labels": labels,
+            "latency_ms": latency_ms,
+            "packet_loss_pct": packet_loss_pct,
+            "bandwidth_mbps": bandwidth_mbps,
+            "jitter_ms": jitter_ms,
+            "current_health_score": health_score,
+            "source": "real_predictions",
+            "predictions_analyzed": len(preds),
         },
     }
 

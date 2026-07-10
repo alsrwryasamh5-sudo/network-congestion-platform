@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import {
   Activity, AlertTriangle, CheckCircle, Cpu, Database, Gauge,
-  Network, Shield, TrendingUp, Users, Zap, HardDrive, MemoryStick,
+  Network, Shield, TrendingUp, Users, Zap, HardDrive, MemoryStick, Server,
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -13,6 +13,7 @@ import {
 import { Layout } from '../components/Layout';
 import { Card, StatCard, Badge } from '../components/Card';
 import { dashboardService } from '../services/dashboardService';
+import { apiPost } from '../services/api';
 import toast from 'react-hot-toast';
 
 const COLORS = ['#0EA5E9', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
@@ -49,6 +50,41 @@ export function DashboardPage() {
 
   return (
     <Layout title={t('nav.overview')}>
+      {/* Seed data button (if no predictions) */}
+      {overview && overview.total_predictions === 0 && (
+        <Card className="mb-4 border-cyber-warning/30 bg-cyber-warning/5">
+          <div className="flex items-start gap-3">
+            <Zap size={20} className="text-cyber-warning flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h4 className="font-semibold text-cyber-warning mb-1">لا توجد بيانات في الواجهة بعد</h4>
+              <p className="text-sm text-cyber-muted mb-3">
+                لتعبئة الواجهات بالبيانات، اضغط الزر أدناه لتوليد تنبؤات تجريبية بناءً على النموذج المُدرَّب.
+                يمكنك أيضاً تدريب النموذج من صفحة Training لتعبئة البيانات تلقائياً.
+              </p>
+              <button
+                onClick={async () => {
+                  try {
+                    toast.loading('جاري تعبئة البيانات...', { id: 'seed' });
+                    const r = await apiPost('/ml/seed-database', {
+                      n_predictions: 200,
+                      congested_ratio: 0.4,
+                      hours_back: 72,
+                    });
+                    toast.success(`تم توليد ${r.data.predictions_created} تنبؤ بنجاح!`, { id: 'seed' });
+                    setTimeout(() => window.location.reload(), 1500);
+                  } catch {
+                    toast.error('فشل التعبئة', { id: 'seed' });
+                  }
+                }}
+                className="btn-primary flex items-center gap-2"
+              >
+                <Zap size={16} /> تعبئة الواجهات بالبيانات
+              </button>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Top stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4 mb-6">
         <StatCard

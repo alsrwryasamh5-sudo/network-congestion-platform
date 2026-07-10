@@ -31,6 +31,7 @@ from app.models.congestion_event import CongestionEvent
 from app.models.root_cause import RootCauseAnalysis
 from app.services.ml_service import get_ml_service
 from app.services.auth_service import log_activity
+from app.services.seeder_service import seed_database_with_predictions
 from app.utils.errors import (
     ValidationError, ModelNotReadyError, NotFoundError, AuthorizationError,
 )
@@ -355,6 +356,19 @@ def train():
         job.result = metrics.get("models", {}).get("stacking", {})
         db.session.commit()
 
+        # Auto-seed database with predictions from the newly trained model
+        try:
+            logger.info("Auto-seeding database with realistic predictions...")
+            seed_result = seed_database_with_predictions(
+                n_predictions=100,
+                congested_ratio=0.35,
+                user_id=g.current_user.id,
+                hours_back=72,
+            )
+            logger.info(f"Auto-seed complete: {seed_result}")
+        except Exception as seed_err:
+            logger.warning(f"Auto-seed failed (non-fatal): {seed_err}")
+
         return {"success": True, "data": {"experiment_id": experiment.id, "metrics": metrics}}
 
     except Exception as e:
@@ -474,6 +488,19 @@ def train_kaggle():
         }
         db.session.commit()
 
+        # Auto-seed database with predictions from the newly trained model
+        try:
+            logger.info("Auto-seeding database with realistic predictions after Kaggle training...")
+            seed_result = seed_database_with_predictions(
+                n_predictions=150,
+                congested_ratio=0.40,
+                user_id=g.current_user.id,
+                hours_back=72,
+            )
+            logger.info(f"Auto-seed complete: {seed_result}")
+        except Exception as seed_err:
+            logger.warning(f"Auto-seed failed (non-fatal): {seed_err}")
+
         logger.info(f"Kaggle training complete. Accuracy: {metrics['models']['stacking']['accuracy']:.4f}")
         return {
             "success": True,
@@ -561,6 +588,19 @@ def train_csv():
         experiment.artifact_paths = metrics.get("artifacts")
         db.session.commit()
 
+        # Auto-seed database with predictions from the newly trained model
+        try:
+            logger.info("Auto-seeding database with realistic predictions after CSV training...")
+            seed_result = seed_database_with_predictions(
+                n_predictions=150,
+                congested_ratio=0.40,
+                user_id=g.current_user.id,
+                hours_back=72,
+            )
+            logger.info(f"Auto-seed complete: {seed_result}")
+        except Exception as seed_err:
+            logger.warning(f"Auto-seed failed (non-fatal): {seed_err}")
+
         # Clean up temp file
         try:
             os.remove(tmp_path)
@@ -590,10 +630,114 @@ def train_csv():
         raise
 
 
+@ml_bp.route("/seed-database", methods=["POST"])
+@auth_required(roles=("admin", "researcher"))
+@limiter.limit("3 per hour")
+def seed_database():
+    """
+    Manually seed the database with realistic predictions.
+    Useful for filling the dashboard with demo data.
+
+    Request body:
+    {
+        "n_predictions": 200,
+        "congested_ratio": 0.35,
+        "hours_back": 72
+    }
+    """
+    data = request.get_json() or {}
+    n_predictions = int(data.get("n_predictions", 200))
+    congested_ratio = float(data.get("congested_ratio", 0.35))
+    hours_back = int(data.get("hours_back", 72))
+
+    # Cap values
+    n_predictions = min(max(n_predictions, 10), 1000)
+    congested_ratio = min(max(congested_ratio, 0.0), 1.0)
+
+    result = seed_database_with_predictions(
+        n_predictions=n_predictions,
+        congested_ratio=congested_ratio,
+        user_id=g.current_user.id,
+        hours_back=hours_back,
+    )
+    return {
+        "success": True,
+        "message": f"Database seeded with {result.get('predictions_created', 0)} predictions",
+        "data": result,
+    }
+
+
+@ml_bp.route("/top-culprit-hosts", methods=["GET"])
+@auth_required()
+def top_culprit_hosts():
+    """
+    Get the top hosts contributing to network congestion.
+    Aggregates congestion events by source IP, sorted by culprit score.
+    """
+    limit = min(int(request.args.get("limit", 20)), 100)
+    hours = int(request.args.get("hours", 168))  # default 7 days
+
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    # Aggregate by source_ip
+    from sqlalchemy import func, desc
+    rows = (
+        db.session.query(
+            CongestionEvent.source_ip,
+            func.count(CongestionEvent.id).label("event_count"),
+            func.avg(CongestionEvent.culprit_score).label("avg_culprit_score"),
+            func.max(CongestionEvent.culprit_score).label("max_culprit_score"),
+            func.avg(CongestionEvent.congestion_score).label("avg_congestion_score"),
+            CongestionEvent.severity,
+            CongestionEvent.protocol,
+            CongestionEvent.l4_dst_port,
+        )
+        .filter(
+            CongestionEvent.source_ip.isnot(None),
+            CongestionEvent.detected_at >= since,
+        )
+        .group_by(CongestionEvent.source_ip)
+        .order_by(desc("avg_culprit_score"))
+        .limit(limit)
+        .all()
+    )
+
+    # Get host types from HOST_PROFILES in seeder_service
+    from app.services.seeder_service import HOST_PROFILES
+    def get_host_type(ip: str) -> str:
+        for p in HOST_PROFILES:
+            if ip.startswith(p["ip_prefix"]):
+                return p["type"]
+        return "Unknown"
+
+    hosts = []
+    for i, row in enumerate(rows, 1):
+        hosts.append({
+            "rank": i,
+            "source_ip": row.source_ip,
+            "host_type": get_host_type(row.source_ip),
+            "event_count": int(row.event_count),
+            "avg_culprit_score": round(float(row.avg_culprit_score or 0), 2),
+            "max_culprit_score": round(float(row.max_culprit_score or 0), 2),
+            "avg_congestion_score": round(float(row.avg_congestion_score or 0), 4),
+            "severity": row.severity or "unknown",
+            "protocol": row.protocol,
+            "l4_dst_port": row.l4_dst_port,
+        })
+
+    return {
+        "success": True,
+        "data": {
+            "total_hosts": len(hosts),
+            "hours_back": hours,
+            "hosts": hosts,
+        },
+    }
+
+
 @ml_bp.route("/feature-importance", methods=["GET"])
 @auth_required()
 def feature_importance():
-    """Return global SHAP feature importance (cached from training)."""
     # Try to load from metrics.json, fallback to notebook reference values
     metrics_path = os.path.join(current_app.config["ML_ARTIFACTS_DIR"], "metrics.json")
     source = "notebook_reference"
