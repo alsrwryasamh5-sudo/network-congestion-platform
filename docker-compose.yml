@@ -1,0 +1,91 @@
+version: '3.9'
+
+services:
+  # ========== PostgreSQL ==========
+  db:
+    image: postgres:16-alpine
+    container_name: congestion_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-congestion_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========== Redis (cache + rate limit) ==========
+  redis:
+    image: redis:7-alpine
+    container_name: congestion_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ========== Backend (Flask) ==========
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: congestion_backend
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-change-me-too}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-congestion_db}
+      - REDIS_URL=redis://redis:6379/0
+      - CACHE_TYPE=RedisCache
+      - RATELIMIT_STORAGE_URI=redis://redis:6379/1
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:8080
+      - KAGGLE_API_TOKEN=${KAGGLE_API_TOKEN:-}
+      - KAGGLE_DATASET=ndayisabae/nf-unsw-nb15-v3
+      - LOG_LEVEL=INFO
+    ports:
+      - "5000:5000"
+    volumes:
+      - backend_artifacts:/app/artifacts
+      - backend_reports:/app/artifacts/reports
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/v1/system/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ========== Frontend (React + Nginx) ==========
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: congestion_frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  backend_artifacts:
+  backend_reports:

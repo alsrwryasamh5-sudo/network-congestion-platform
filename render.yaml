@@ -1,0 +1,71 @@
+# Render Blueprint - Network Congestion Detection Platform
+# Free tier deployment
+# https://render.com/docs/blueprint-spec
+
+services:
+  # ========== PostgreSQL Database (Free - 30 days) ==========
+  - type: postgres
+    name: congestion-db
+    region: oregon
+    plan: free
+    ipAllowList: []
+    database: congestion_db
+    user: congestion_admin
+    postgresMajorVersion: 16
+
+  # ========== Backend API (Flask) - Free Web Service ==========
+  - type: web
+    name: congestion-backend
+    env: docker
+    region: oregon
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/v1/system/health
+    autoDeploy: true
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "False"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: congestion-db
+          property: connectionString
+      - key: CACHE_TYPE
+        value: SimpleCache
+      - key: RATELIMIT_STORAGE_URI
+        value: memory://
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PORT
+        value: "5000"
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+  # ========== Frontend (React served by Flask backend) ==========
+  # The frontend is built into static files and served by the Flask backend
+  # directly via send_from_directory (configured in app/__init__.py).
+  # This avoids needing a separate frontend service on the free tier.
+  #
+  # If you want a separate frontend service, uncomment the block below:
+  #
+  # - type: web
+  #   name: congestion-frontend
+  #   env: docker
+  #   region: oregon
+  #   plan: free
+  #   dockerfilePath: ./frontend/Dockerfile
+  #   dockerContext: ./frontend
+  #   autoDeploy: true
+  #   envVars:
+  #     - key: VITE_API_URL
+  #       value: https://congestion-backend.onrender.com/api/v1
