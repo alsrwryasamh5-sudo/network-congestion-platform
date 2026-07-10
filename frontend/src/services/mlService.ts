@@ -60,6 +60,22 @@ export const mlService = {
   train: (payload: { synthetic?: boolean; n_samples?: number; dataset_id?: number; csv_path?: string; experiment_name?: string }) =>
     apiPost('/ml/train', payload),
 
+  trainKaggle: (payload: { n_samples?: number; experiment_name?: string }) =>
+    apiPost('/ml/train-kaggle', payload),
+
+  trainCsv: (file: File, nSamples: number, experimentName: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('n_samples', String(nSamples));
+    formData.append('experiment_name', experimentName);
+    const token = JSON.parse(localStorage.getItem('congestion_auth') || '{}').accessToken;
+    return fetch('/api/v1/ml/train-csv', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    }).then(r => r.json());
+  },
+
   featureImportance: () => apiGet('/ml/feature-importance'),
 
   clustering: (hosts: any[]) => apiPost('/ml/clustering', { hosts }),

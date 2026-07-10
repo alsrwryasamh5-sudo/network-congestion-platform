@@ -149,3 +149,139 @@ def download_kaggle_dataset(target_dir: str) -> str:
     except Exception as e:
         logger.error(f"Kaggle download failed: {e}")
         raise
+
+
+def load_kaggle_dataset_sample(
+    target_dir: str = "/tmp/kaggle_data",
+    n_samples: int = 50000,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """
+    Download the NF-UNSW-NB15-v3 dataset from Kaggle and load a random sample.
+
+    This is designed to work within Render's free tier memory constraints (512MB).
+    The full dataset is 2.3M rows which would use ~1.5GB in memory, so we sample.
+
+    Args:
+        target_dir: Where to download/extract the dataset
+        n_samples: Number of rows to sample (default 50,000)
+        seed: Random seed for reproducibility
+
+    Returns:
+        DataFrame with n_samples rows from the real dataset
+    """
+    import subprocess
+
+    # Step 1: Set up Kaggle credentials from environment variables
+    kaggle_username = os.getenv("KAGGLE_USERNAME", "")
+    kaggle_key = os.getenv("KAGGLE_KEY", "")
+    kaggle_token = os.getenv("KAGGLE_API_TOKEN", "")
+
+    if kaggle_username and kaggle_key:
+        # Standard Kaggle auth
+        kaggle_dir = os.path.expanduser("~/.kaggle")
+        os.makedirs(kaggle_dir, exist_ok=True)
+        kaggle_json = os.path.join(kaggle_dir, "kaggle.json")
+        with open(kaggle_json, "w") as f:
+            import json as _json
+            _json.dump({"username": kaggle_username, "key": kaggle_key}, f)
+        os.chmod(kaggle_json, 0o600)
+        logger.info(f"Kaggle credentials written for user: {kaggle_username}")
+    elif kaggle_token:
+        # Token-based auth (newer format)
+        kaggle_dir = os.path.expanduser("~/.kaggle")
+        os.makedirs(kaggle_dir, exist_ok=True)
+        token_file = os.path.join(kaggle_dir, "access_token")
+        with open(token_file, "w") as f:
+            f.write(kaggle_token)
+        os.chmod(token_file, 0o600)
+        os.environ["KAGGLE_API_TOKEN"] = kaggle_token
+        logger.info("Kaggle token-based auth configured.")
+    else:
+        raise RuntimeError(
+            "No Kaggle credentials found. Set KAGGLE_USERNAME + KAGGLE_KEY "
+            "or KAGGLE_API_TOKEN environment variables."
+        )
+
+    # Step 2: Download the dataset
+    csv_path = download_kaggle_dataset(target_dir)
+    logger.info(f"Dataset downloaded to: {csv_path}")
+
+    # Step 3: Read with chunking and sample
+    logger.info(f"Reading dataset and sampling {n_samples} rows...")
+    rng = np.random.default_rng(seed)
+
+    # First pass: count total rows
+    total_rows = 0
+    for chunk in pd.read_csv(csv_path, chunksize=100_000, low_memory=False):
+        total_rows += len(chunk)
+    logger.info(f"Total rows in dataset: {total_rows:,}")
+
+    # Calculate sampling probability
+    sample_prob = min(n_samples / total_rows, 1.0)
+    logger.info(f"Sampling probability: {sample_prob:.4f}")
+
+    # Second pass: sample rows
+    sampled_chunks = []
+    sampled_count = 0
+    for chunk in pd.read_csv(csv_path, chunksize=100_000, low_memory=False):
+        # Downcast types to save memory
+        chunk = _optimize_dtypes(chunk)
+        # Random sample from this chunk
+        n_to_take = int(len(chunk) * sample_prob)
+        if n_to_take > 0:
+            sampled = chunk.sample(n=n_to_take, random_state=seed)
+            sampled_chunks.append(sampled)
+            sampled_count += len(sampled)
+
+    df = pd.concat(sampled_chunks, ignore_index=True) if sampled_chunks else pd.DataFrame()
+
+    # If we got fewer than requested, that's fine
+    # If we got more, trim
+    if len(df) > n_samples:
+        df = df.sample(n=n_samples, random_state=seed).reset_index(drop=True)
+
+    logger.info(f"Sampled {len(df):,} rows from real dataset")
+
+    # Clean up downloaded files to save disk space
+    try:
+        import shutil
+        shutil.rmtree(target_dir, ignore_errors=True)
+        logger.info("Cleaned up downloaded dataset files.")
+    except Exception:
+        pass
+
+    return df
+
+
+def load_csv_file_sample(
+    file_path: str,
+    n_samples: int = 50000,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """
+    Load a CSV file and sample N rows. Used for user-uploaded CSV files.
+    """
+    logger.info(f"Loading CSV: {file_path}, sampling {n_samples} rows...")
+
+    # Count total rows
+    total_rows = sum(1 for _ in open(file_path)) - 1  # minus header
+    logger.info(f"Total rows in CSV: {total_rows:,}")
+
+    sample_prob = min(n_samples / total_rows, 1.0) if total_rows > 0 else 1.0
+
+    sampled_chunks = []
+    for chunk in pd.read_csv(file_path, chunksize=100_000, low_memory=False):
+        chunk = _optimize_dtypes(chunk)
+        n_to_take = max(1, int(len(chunk) * sample_prob))
+        if n_to_take > 0:
+            sampled = chunk.sample(n=min(n_to_take, len(chunk)), random_state=seed)
+            sampled_chunks.append(sampled)
+
+    df = pd.concat(sampled_chunks, ignore_index=True) if sampled_chunks else pd.DataFrame()
+
+    if len(df) > n_samples:
+        df = df.sample(n=n_samples, random_state=seed).reset_index(drop=True)
+
+    logger.info(f"Loaded {len(df):,} sampled rows from CSV")
+    return df

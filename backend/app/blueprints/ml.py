@@ -366,6 +366,217 @@ def train():
         raise
 
 
+@ml_bp.route("/train-kaggle", methods=["POST"])
+@auth_required(roles=("admin", "researcher"))
+@audit_action("train_kaggle", "experiment")
+@limiter.limit("2 per hour")
+def train_kaggle():
+    """
+    Train the model on the real NF-UNSW-NB15-v3 dataset from Kaggle.
+
+    Requires KAGGLE_USERNAME + KAGGLE_KEY (or KAGGLE_API_TOKEN) env vars.
+
+    Request body:
+    {
+        "n_samples": 50000,          // Number of rows to sample (default 50,000)
+        "experiment_name": "kaggle_v1"
+    }
+
+    The dataset is downloaded, sampled (to fit in memory), and used for training.
+    """
+    from app.ml.data_loader import load_kaggle_dataset_sample
+
+    data = request.get_json() or {}
+    n_samples = int(data.get("n_samples", 50000))
+    experiment_name = data.get("experiment_name", f"kaggle_{int(time.time())}")
+
+    # Cap at 100K for Render free tier memory limits
+    n_samples = min(n_samples, 100000)
+
+    # Create experiment record
+    experiment = Experiment(
+        name=experiment_name,
+        user_id=g.current_user.id,
+        model_type="stacking",
+        hyperparameters={
+            "data_source": "kaggle_nf_unsw_nb15_v3",
+            "n_samples": n_samples,
+            "dt_max_depth": 3, "dt_min_samples_leaf": 60,
+            "xgb_n_estimators": 35, "xgb_max_depth": 3, "xgb_lr": 0.06,
+            "meta_C": 0.08, "cv": 5,
+        },
+        status="running",
+        started_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    db.session.add(experiment)
+    db.session.commit()
+
+    job = TrainingJob(
+        user_id=g.current_user.id,
+        experiment_id=experiment.id,
+        job_type="kaggle_training",
+        status="running",
+        progress=0.0,
+        current_step="Downloading dataset from Kaggle...",
+        started_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    db.session.add(job)
+    db.session.commit()
+
+    try:
+        logger.info(f"Starting Kaggle training: {n_samples} samples, experiment={experiment_name}")
+
+        job.progress = 10.0
+        job.current_step = "Downloading NF-UNSW-NB15-v3 from Kaggle..."
+        db.session.commit()
+
+        df = load_kaggle_dataset_sample(
+            target_dir="/tmp/kaggle_data",
+            n_samples=n_samples,
+        )
+
+        job.progress = 50.0
+        job.current_step = f"Training on {len(df):,} real samples..."
+        db.session.commit()
+
+        svc = get_ml_service()
+        metrics = svc.train(df, experiment_name=experiment_name)
+
+        experiment.metrics = metrics.get("models", {}).get("stacking", {})
+        experiment.confusion_matrix = metrics.get("confusion_matrix")
+        experiment.feature_columns = metrics.get("feature_columns")
+        experiment.status = "completed"
+        experiment.completed_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        experiment.duration_seconds = metrics.get("duration_seconds")
+        experiment.artifact_paths = metrics.get("artifacts")
+
+        job.progress = 100.0
+        job.status = "completed"
+        job.completed_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        job.duration_seconds = metrics.get("duration_seconds")
+        job.result = {
+            **metrics.get("models", {}).get("stacking", {}),
+            "data_source": "kaggle_nf_unsw_nb15_v3",
+            "n_samples": len(df),
+        }
+        db.session.commit()
+
+        logger.info(f"Kaggle training complete. Accuracy: {metrics['models']['stacking']['accuracy']:.4f}")
+        return {
+            "success": True,
+            "message": f"Model trained on {len(df):,} real samples from NF-UNSW-NB15-v3",
+            "data": {
+                "experiment_id": experiment.id,
+                "n_samples": len(df),
+                "metrics": metrics,
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"Kaggle training failed: {e}", exc_info=True)
+        experiment.status = "failed"
+        experiment.error_message = str(e)
+        job.status = "failed"
+        job.error_message = str(e)
+        db.session.commit()
+        raise
+
+
+@ml_bp.route("/train-csv", methods=["POST"])
+@auth_required(roles=("admin", "researcher"))
+@audit_action("train_csv", "experiment")
+@limiter.limit("5 per hour")
+def train_csv():
+    """
+    Train the model on an uploaded CSV file.
+
+    The CSV should contain NetFlow v3 format columns (NF-UNSW-NB15-like).
+    Accepts multipart/form-data with a 'file' field.
+
+    Form fields:
+    - file: CSV file (required)
+    - n_samples: Number of rows to sample (optional, default 50,000)
+    - experiment_name: Name for this experiment (optional)
+    """
+    from app.ml.data_loader import load_csv_file_sample
+
+    if "file" not in request.files:
+        raise ValidationError("No file uploaded. Use 'file' field in multipart form.")
+
+    file = request.files["file"]
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise ValidationError("Please upload a .csv file.")
+
+    n_samples = int(request.form.get("n_samples", 50000))
+    n_samples = min(n_samples, 100000)
+    experiment_name = request.form.get("experiment_name", f"csv_{int(time.time())}")
+
+    # Save uploaded file temporarily
+    import tempfile
+    tmp_path = os.path.join(tempfile.gettempdir(), f"upload_{int(time.time())}.csv")
+    file.save(tmp_path)
+
+    experiment = Experiment(
+        name=experiment_name,
+        user_id=g.current_user.id,
+        model_type="stacking",
+        hyperparameters={
+            "data_source": "uploaded_csv",
+            "filename": file.filename,
+            "n_samples": n_samples,
+        },
+        status="running",
+        started_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    db.session.add(experiment)
+    db.session.commit()
+
+    try:
+        logger.info(f"Starting CSV training: {file.filename}, {n_samples} samples")
+
+        df = load_csv_file_sample(tmp_path, n_samples=n_samples)
+
+        svc = get_ml_service()
+        metrics = svc.train(df, experiment_name=experiment_name)
+
+        experiment.metrics = metrics.get("models", {}).get("stacking", {})
+        experiment.confusion_matrix = metrics.get("confusion_matrix")
+        experiment.feature_columns = metrics.get("feature_columns")
+        experiment.status = "completed"
+        experiment.completed_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        experiment.duration_seconds = metrics.get("duration_seconds")
+        experiment.artifact_paths = metrics.get("artifacts")
+        db.session.commit()
+
+        # Clean up temp file
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+        return {
+            "success": True,
+            "message": f"Model trained on {len(df):,} rows from {file.filename}",
+            "data": {
+                "experiment_id": experiment.id,
+                "filename": file.filename,
+                "n_samples": len(df),
+                "metrics": metrics,
+            },
+        }
+
+    except Exception as e:
+        logger.error(f"CSV training failed: {e}", exc_info=True)
+        experiment.status = "failed"
+        experiment.error_message = str(e)
+        db.session.commit()
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        raise
+
+
 @ml_bp.route("/feature-importance", methods=["GET"])
 @auth_required()
 def feature_importance():
