@@ -9,4 +9,5 @@ export const dashboardService = {
   recentPredictions: (limit = 10) =>
     apiGet(`/dashboard/recent-predictions?limit=${limit}`),
   apiStats: () => apiGet('/dashboard/api-stats'),
+  intelligence: () => apiGet('/dashboard/intelligence'),
 };

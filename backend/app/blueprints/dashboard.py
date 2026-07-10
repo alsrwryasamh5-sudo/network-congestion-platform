@@ -15,6 +15,7 @@ from app.models.experiment import Experiment
 from app.models.notification import Notification
 from app.models.system_log import ActivityLog
 from app.utils.errors import NotFoundError
+from app.services.intelligence_data import get_full_intelligence_report
 from ._shared import auth_required
 
 dashboard_bp = Blueprint("dashboard", __name__, url_prefix="/api/v1/dashboard")
@@ -349,3 +350,17 @@ def api_stats():
             ],
         },
     }
+
+
+@dashboard_bp.route("/intelligence", methods=["GET"])
+@auth_required()
+def intelligence():
+    """
+    Full network intelligence report based on the original notebook analysis.
+    Returns reference data from the NF-UNSW-NB15-v3 academic study.
+    """
+    return {
+        "success": True,
+        "data": get_full_intelligence_report(),
+    }
+
