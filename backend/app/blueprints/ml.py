@@ -427,6 +427,18 @@ def train_kaggle():
     try:
         logger.info(f"Starting Kaggle training: {n_samples} samples, experiment={experiment_name}")
 
+        # Pre-check Kaggle credentials before starting
+        kaggle_username = os.getenv("KAGGLE_USERNAME", "")
+        kaggle_key = os.getenv("KAGGLE_KEY", "")
+        kaggle_token = os.getenv("KAGGLE_API_TOKEN", "")
+
+        if not (kaggle_username and kaggle_key) and not kaggle_token:
+            raise ValidationError(
+                "Kaggle credentials not configured. Please set KAGGLE_USERNAME and KAGGLE_KEY "
+                "environment variables on Render Dashboard → Environment. "
+                "Get your credentials from https://www.kaggle.com → Account → Create New Token"
+            )
+
         job.progress = 10.0
         job.current_step = "Downloading NF-UNSW-NB15-v3 from Kaggle..."
         db.session.commit()
