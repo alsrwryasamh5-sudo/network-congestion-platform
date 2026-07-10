@@ -144,7 +144,9 @@ def create_app(config_name: str = None) -> Flask:
         except Exception as e:
             logger.warning(f"DB init skipped: {e}")
 
-    # --- Preload ML service (auto-train if no artifacts exist) ---
+    # --- Preload ML service (auto-train in background if no artifacts exist) ---
+    # NOTE: Auto-training is deferred to first request to avoid blocking startup
+    # (Render's health check times out if the server takes too long to boot)
     with app.app_context():
         try:
             from app.services.ml_service import get_ml_service
@@ -152,14 +154,7 @@ def create_app(config_name: str = None) -> Flask:
             if svc.load():
                 logger.info("ML model loaded at startup.")
             else:
-                logger.warning("ML model not available. Auto-training on synthetic data...")
-                try:
-                    from app.ml.data_loader import generate_synthetic_data
-                    df = generate_synthetic_data(n_samples=3000)
-                    metrics = svc.train(df, experiment_name="auto_initial")
-                    logger.info(f"Auto-training complete. Accuracy: {metrics['models']['stacking']['accuracy']:.4f}")
-                except Exception as train_err:
-                    logger.error(f"Auto-training failed: {train_err}")
+                logger.warning("ML model not available. Will auto-train on first /api/v1/ml/* request.")
         except Exception as e:
             logger.warning(f"ML model preload failed: {e}")
 

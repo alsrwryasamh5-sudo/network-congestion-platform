@@ -96,7 +96,10 @@ class MLService:
     # ---------------------------------------------------------------- predict
     def predict(self, input_row: Dict[str, Any]) -> Dict[str, Any]:
         if not self.is_ready:
-            raise ModelNotReadyError()
+            # Try auto-train on first request
+            self._auto_train_if_needed()
+            if not self.is_ready:
+                raise ModelNotReadyError()
         import time
         t0 = time.perf_counter()
         result = predict_single(
@@ -104,6 +107,19 @@ class MLService:
         )
         result["inference_time_ms"] = (time.perf_counter() - t0) * 1000
         return result
+
+    def _auto_train_if_needed(self) -> None:
+        """Auto-train on synthetic data if no model is loaded (lazy init)."""
+        if self.is_ready:
+            return
+        try:
+            logger.info("Auto-training model on synthetic data (first request)...")
+            from app.ml.data_loader import generate_synthetic_data
+            df = generate_synthetic_data(n_samples=2000)
+            self.train(df, experiment_name="auto_initial")
+            logger.info("Auto-training complete.")
+        except Exception as e:
+            logger.error(f"Auto-training failed: {e}", exc_info=True)
 
     # ---------------------------------------------------------------- shap
     def explain(self, input_row: Dict[str, Any], top_k: int = 10) -> Dict[str, Any]:
