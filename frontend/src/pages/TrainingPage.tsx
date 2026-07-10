@@ -23,6 +23,7 @@ export function TrainingPage() {
   const [samples, setSamples] = useState(50000);
   const [expName, setExpName] = useState(`exp_${Date.now()}`);
   const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvFile2, setCsvFile2] = useState<File | null>(null);
   const [result, setResult] = useState<any>(null);
 
   const load = () => {
@@ -56,6 +57,9 @@ export function TrainingPage() {
         }
         const formData = new FormData();
         formData.append('file', csvFile);
+        if (csvFile2) {
+          formData.append('file2', csvFile2);
+        }
         formData.append('n_samples', String(samples));
         formData.append('experiment_name', expName);
         // Use fetch for multipart upload
@@ -101,7 +105,19 @@ export function TrainingPage() {
     const file = e.target.files?.[0];
     if (file) {
       setCsvFile(file);
-      setExpName(`csv_${file.name.replace('.csv', '')}_${Date.now()}`);
+      if (!csvFile2) {
+        setExpName(`csv_${file.name.replace('.csv', '')}_${Date.now()}`);
+      } else {
+        setExpName(`csv_merged_${Date.now()}`);
+      }
+    }
+  };
+
+  const handleFile2Change = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCsvFile2(file);
+      setExpName(`csv_merged_${Date.now()}`);
     }
   };
 
@@ -164,12 +180,13 @@ export function TrainingPage() {
                 <UploadCloud size={20} />
               </div>
               <div>
-                <h3 className="font-semibold text-cyber-text">Upload CSV</h3>
-                <p className="text-xs text-cyber-muted">Your own dataset</p>
+                <h3 className="font-semibold text-cyber-text">Upload CSV Files</h3>
+                <p className="text-xs text-cyber-muted">NF-UNSW-NB15 (1 or 2 files)</p>
               </div>
             </div>
             <p className="text-xs text-cyber-muted">
-              Upload a CSV file with NetFlow v3 columns. Perfect for custom datasets.
+              Upload NF-UNSW-NB15-v3.csv and optionally NetFlow_v3_Features.csv.
+              Files will be merged like the original notebook.
             </p>
           </div>
         </Card>
@@ -213,25 +230,66 @@ export function TrainingPage() {
             </div>
 
             {mode === 'csv' && (
-              <div>
-                <label className="block text-sm text-cyber-muted mb-1.5">CSV File</label>
-                <div className="relative">
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileChange}
-                    className="hidden"
-                    id="csv-upload"
-                  />
-                  <label
-                    htmlFor="csv-upload"
-                    className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-cyber-border rounded-xl cursor-pointer hover:border-cyber-primary transition text-cyber-muted hover:text-cyber-primary"
-                  >
-                    <FileSpreadsheet size={18} />
-                    {csvFile ? csvFile.name : 'Click to select CSV file'}
+              <>
+                <div>
+                  <label className="block text-sm text-cyber-muted mb-1.5">
+                    CSV File 1 (required) — NF-UNSW-NB15-v3.csv
                   </label>
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleFileChange}
+                      className="hidden"
+                      id="csv-upload"
+                    />
+                    <label
+                      htmlFor="csv-upload"
+                      className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-cyber-border rounded-xl cursor-pointer hover:border-cyber-primary transition text-cyber-muted hover:text-cyber-primary"
+                    >
+                      <FileSpreadsheet size={18} />
+                      {csvFile ? (
+                        <span className="text-cyber-text">
+                          {csvFile.name} ({(csvFile.size / 1024 / 1024).toFixed(1)} MB)
+                        </span>
+                      ) : (
+                        'Click to select NF-UNSW-NB15-v3.csv'
+                      )}
+                    </label>
+                  </div>
                 </div>
-              </div>
+
+                <div>
+                  <label className="block text-sm text-cyber-muted mb-1.5">
+                    CSV File 2 (optional) — NetFlow_v3_Features.csv
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleFile2Change}
+                      className="hidden"
+                      id="csv-upload-2"
+                    />
+                    <label
+                      htmlFor="csv-upload-2"
+                      className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-cyber-border rounded-xl cursor-pointer hover:border-cyber-accent transition text-cyber-muted hover:text-cyber-accent"
+                    >
+                      <FileSpreadsheet size={18} />
+                      {csvFile2 ? (
+                        <span className="text-cyber-text">
+                          {csvFile2.name} ({(csvFile2.size / 1024 / 1024).toFixed(1)} MB)
+                        </span>
+                      ) : (
+                        'Click to select NetFlow_v3_Features.csv (optional)'
+                      )}
+                    </label>
+                  </div>
+                  <p className="text-[10px] text-cyber-muted mt-1">
+                    If both files are provided, they will be merged (like the original notebook).
+                  </p>
+                </div>
+              </>
             )}
 
             {mode === 'kaggle' && (

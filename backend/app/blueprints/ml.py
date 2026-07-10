@@ -528,33 +528,51 @@ def train_kaggle():
 @limiter.limit("5 per hour")
 def train_csv():
     """
-    Train the model on an uploaded CSV file.
+    Train the model on uploaded CSV file(s).
 
-    The CSV should contain NetFlow v3 format columns (NF-UNSW-NB15-like).
-    Accepts multipart/form-data with a 'file' field.
+    Accepts multipart/form-data with one or two 'file'/'file2' fields:
+    - file: Primary CSV (required) - e.g., NF-UNSW-NB15-v3.csv
+    - file2: Secondary CSV (optional) - e.g., NetFlow_v3_Features.csv
+
+    Both files will be concatenated if both are provided (NF-UNSW-NB15 style).
 
     Form fields:
-    - file: CSV file (required)
-    - n_samples: Number of rows to sample (optional, default 50,000)
+    - file: First CSV file (required)
+    - file2: Second CSV file (optional, will be merged with first)
+    - n_samples: Number of rows to sample (optional, default 50,000, max 100,000)
     - experiment_name: Name for this experiment (optional)
     """
-    from app.ml.data_loader import load_csv_file_sample
+    from app.ml.data_loader import load_csv_file_sample, _optimize_dtypes
+    import tempfile
 
-    if "file" not in request.files:
-        raise ValidationError("No file uploaded. Use 'file' field in multipart form.")
+    # Collect uploaded files
+    files = []
+    filenames = []
+    for key in ["file", "file2"]:
+        if key in request.files:
+            f = request.files[key]
+            if f.filename and f.filename.endswith(".csv"):
+                files.append(f)
+                filenames.append(f.filename)
 
-    file = request.files["file"]
-    if not file.filename or not file.filename.endswith(".csv"):
-        raise ValidationError("Please upload a .csv file.")
+    if not files:
+        raise ValidationError(
+            "No CSV file uploaded. Use 'file' field (and optionally 'file2') in multipart form. "
+            "For NF-UNSW-NB15, upload both NF-UNSW-NB15-v3.csv and NetFlow_v3_Features.csv."
+        )
 
     n_samples = int(request.form.get("n_samples", 50000))
     n_samples = min(n_samples, 100000)
     experiment_name = request.form.get("experiment_name", f"csv_{int(time.time())}")
 
-    # Save uploaded file temporarily
-    import tempfile
-    tmp_path = os.path.join(tempfile.gettempdir(), f"upload_{int(time.time())}.csv")
-    file.save(tmp_path)
+    # Save uploaded files temporarily
+    tmp_paths = []
+    for i, f in enumerate(files):
+        tmp_path = os.path.join(tempfile.gettempdir(), f"upload_{int(time.time())}_{i}.csv")
+        f.save(tmp_path)
+        tmp_paths.append(tmp_path)
+        file_size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
+        logger.info(f"Saved uploaded file {f.filename}: {file_size_mb:.1f} MB")
 
     experiment = Experiment(
         name=experiment_name,
@@ -562,7 +580,8 @@ def train_csv():
         model_type="stacking",
         hyperparameters={
             "data_source": "uploaded_csv",
-            "filename": file.filename,
+            "filenames": filenames,
+            "n_files": len(files),
             "n_samples": n_samples,
         },
         status="running",
@@ -572,9 +591,29 @@ def train_csv():
     db.session.commit()
 
     try:
-        logger.info(f"Starting CSV training: {file.filename}, {n_samples} samples")
+        logger.info(f"Starting CSV training: {filenames}, {n_samples} samples target")
 
-        df = load_csv_file_sample(tmp_path, n_samples=n_samples)
+        # Load and optionally merge multiple CSVs
+        if len(tmp_paths) == 1:
+            df = load_csv_file_sample(tmp_paths[0], n_samples=n_samples)
+        else:
+            # Load each file with sampling, then concatenate
+            # Split n_samples across files
+            n_per_file = max(n_samples // len(tmp_paths), 1000)
+            dfs = []
+            for path in tmp_paths:
+                logger.info(f"Loading {path} with {n_per_file} samples...")
+                df_part = load_csv_file_sample(path, n_samples=n_per_file)
+                dfs.append(df_part)
+                logger.info(f"Loaded {len(df_part)} rows from {path}")
+
+            # Concatenate and shuffle
+            df = pd.concat(dfs, ignore_index=True)
+            df = df.sample(frac=1, random_state=42).reset_index(drop=True)  # shuffle
+            # Trim to n_samples
+            if len(df) > n_samples:
+                df = df.head(n_samples)
+            logger.info(f"Merged dataset: {len(df)} rows total")
 
         svc = get_ml_service()
         metrics = svc.train(df, experiment_name=experiment_name)
@@ -601,18 +640,20 @@ def train_csv():
         except Exception as seed_err:
             logger.warning(f"Auto-seed failed (non-fatal): {seed_err}")
 
-        # Clean up temp file
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
+        # Clean up temp files
+        for path in tmp_paths:
+            try:
+                os.remove(path)
+            except Exception:
+                pass
 
         return {
             "success": True,
-            "message": f"Model trained on {len(df):,} rows from {file.filename}",
+            "message": f"Model trained on {len(df):,} rows from {', '.join(filenames)}",
             "data": {
                 "experiment_id": experiment.id,
-                "filename": file.filename,
+                "filenames": filenames,
+                "n_files": len(files),
                 "n_samples": len(df),
                 "metrics": metrics,
             },
@@ -623,10 +664,11 @@ def train_csv():
         experiment.status = "failed"
         experiment.error_message = str(e)
         db.session.commit()
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
+        for path in tmp_paths:
+            try:
+                os.remove(path)
+            except Exception:
+                pass
         raise
 
 
