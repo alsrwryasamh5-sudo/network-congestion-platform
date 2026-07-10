@@ -1,4 +1,5 @@
 # Multi-stage build: build frontend, then bundle into backend image
+# Build context must be the repo root (set dockerContext: . in render.yaml)
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /frontend
@@ -31,8 +32,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy backend code
 COPY backend/ ./
 
-# Copy built frontend dist into backend's expected location
-COPY --from=frontend-builder /frontend/dist /app/../frontend/dist
+# Copy built frontend dist into the location expected by Flask (../frontend/dist relative to /app)
+# /app is /app/backend in the original tree, so we put it at /frontend_dist
+COPY --from=frontend-builder /frontend/dist /frontend/dist
 
 # Create artifacts & reports directories
 RUN mkdir -p /app/artifacts /app/artifacts/reports

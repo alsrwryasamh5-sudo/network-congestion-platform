@@ -87,9 +87,19 @@ def create_app(config_name: str = None) -> Flask:
 
     # --- Serve React frontend (SPA) ---
     import os as _os
-    frontend_dist = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "..", "frontend", "dist")
-    frontend_dist = _os.path.abspath(frontend_dist)
-    if _os.path.exists(frontend_dist):
+    # Try multiple candidate paths (works for both local dev and Docker)
+    candidate_paths = [
+        "/frontend/dist",  # Docker production path
+        _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "..", "frontend", "dist")),  # Local dev
+        _os.path.abspath(_os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "frontend", "dist")),  # Backend-only
+    ]
+    frontend_dist = None
+    for path in candidate_paths:
+        if _os.path.exists(path):
+            frontend_dist = path
+            break
+
+    if frontend_dist:
         from flask import send_from_directory
 
         @app.route("/", methods=["GET"])
@@ -108,6 +118,8 @@ def create_app(config_name: str = None) -> Flask:
             return send_from_directory(frontend_dist, "index.html")
 
         logger.info(f"Serving React frontend from {frontend_dist}")
+    else:
+        logger.warning("Frontend dist not found. Backend will serve API only.")
 
     # --- Create tables (development convenience) ---
     with app.app_context():

@@ -12,7 +12,7 @@ services:
     region: oregon
     plan: free
     dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerContext: .
     healthCheckPath: /api/v1/system/health
     autoDeploy: true
     envVars:
