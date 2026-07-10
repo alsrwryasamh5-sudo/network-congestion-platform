@@ -16,6 +16,7 @@ import os
 import io
 import json
 import time
+from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 from flask import Blueprint, request, g, current_app, send_file
@@ -297,7 +298,7 @@ def train():
             "meta_C": 0.08, "cv": 5,
         },
         status="running",
-        started_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        started_at=datetime.now(timezone.utc),
     )
     db.session.add(experiment)
     db.session.commit()
@@ -310,7 +311,7 @@ def train():
         status="running",
         progress=0.0,
         current_step="Loading data",
-        started_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        started_at=datetime.now(timezone.utc),
     )
     db.session.add(job)
     db.session.commit()
@@ -343,13 +344,13 @@ def train():
         experiment.confusion_matrix = metrics.get("confusion_matrix")
         experiment.feature_columns = metrics.get("feature_columns")
         experiment.status = "completed"
-        experiment.completed_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        experiment.completed_at = datetime.now(timezone.utc)
         experiment.duration_seconds = metrics.get("duration_seconds")
         experiment.artifact_paths = metrics.get("artifacts")
 
         job.progress = 100.0
         job.status = "completed"
-        job.completed_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        job.completed_at = datetime.now(timezone.utc)
         job.duration_seconds = metrics.get("duration_seconds")
         job.result = metrics.get("models", {}).get("stacking", {})
         db.session.commit()
@@ -406,7 +407,7 @@ def train_kaggle():
             "meta_C": 0.08, "cv": 5,
         },
         status="running",
-        started_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        started_at=datetime.now(timezone.utc),
     )
     db.session.add(experiment)
     db.session.commit()
@@ -418,7 +419,7 @@ def train_kaggle():
         status="running",
         progress=0.0,
         current_step="Downloading dataset from Kaggle...",
-        started_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        started_at=datetime.now(timezone.utc),
     )
     db.session.add(job)
     db.session.commit()
@@ -446,13 +447,13 @@ def train_kaggle():
         experiment.confusion_matrix = metrics.get("confusion_matrix")
         experiment.feature_columns = metrics.get("feature_columns")
         experiment.status = "completed"
-        experiment.completed_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        experiment.completed_at = datetime.now(timezone.utc)
         experiment.duration_seconds = metrics.get("duration_seconds")
         experiment.artifact_paths = metrics.get("artifacts")
 
         job.progress = 100.0
         job.status = "completed"
-        job.completed_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        job.completed_at = datetime.now(timezone.utc)
         job.duration_seconds = metrics.get("duration_seconds")
         job.result = {
             **metrics.get("models", {}).get("stacking", {}),
@@ -526,7 +527,7 @@ def train_csv():
             "n_samples": n_samples,
         },
         status="running",
-        started_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        started_at=datetime.now(timezone.utc),
     )
     db.session.add(experiment)
     db.session.commit()
@@ -543,7 +544,7 @@ def train_csv():
         experiment.confusion_matrix = metrics.get("confusion_matrix")
         experiment.feature_columns = metrics.get("feature_columns")
         experiment.status = "completed"
-        experiment.completed_at = time.strftime("%Y-%m-%d %H:%M:%S")
+        experiment.completed_at = datetime.now(timezone.utc)
         experiment.duration_seconds = metrics.get("duration_seconds")
         experiment.artifact_paths = metrics.get("artifacts")
         db.session.commit()
