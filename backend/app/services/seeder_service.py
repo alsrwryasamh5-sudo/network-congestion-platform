@@ -270,7 +270,7 @@ def seed_database_with_predictions(
                 severity=rca.get("severity"),
                 inference_time_ms=pred_result.get("inference_time_ms"),
                 source="seed",
-                       # Override created_at by setting it after add
+            )
             db.session.add(pred)
             db.session.flush()  # get pred.id
             # Update created_at manually
