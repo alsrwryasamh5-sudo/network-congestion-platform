@@ -37,8 +37,6 @@ class NetworkDevice(db.Model):
     )
 
     # Relationships
-    congestion_events = db.relationship("CongestionEvent", backref="device", lazy="dynamic",
-                                        foreign_keys="CongestionEvent.device_id")
     alerts = db.relationship("DeviceAlert", backref="device", lazy="dynamic")
 
     def to_dict(self) -> dict:
