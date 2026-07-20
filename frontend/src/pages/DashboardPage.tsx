@@ -29,6 +29,7 @@ export function DashboardPage() {
   const [health, setHealth] = useState<any>(null);
   const [recent, setRecent] = useState<any[]>([]);
   const [intel, setIntel] = useState<any>(null);
+  const [noc, setNoc] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,15 +38,26 @@ export function DashboardPage() {
       dashboardService.networkHealth(),
       dashboardService.recentPredictions(8),
       dashboardService.intelligence(),
+      dashboardService.noc(),
     ])
-      .then(([o, h, r, i]) => {
+      .then(([o, h, r, i, n]) => {
         setOverview(o.data);
         setHealth(h.data);
         setRecent(r.data);
         setIntel(i.data);
+        setNoc(n.data);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, []);
+
+  // Auto-refresh every 10 seconds for live data
+  useEffect(() => {
+    const interval = setInterval(() => {
+      dashboardService.noc().then((r) => setNoc(r.data)).catch(() => {});
+      dashboardService.overview().then((r) => setOverview(r.data)).catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   const i = intel; // shorthand
@@ -55,8 +67,8 @@ export function DashboardPage() {
 
   return (
     <Layout title={t('nav.overview')}>
-      {/* ===== GLOBAL INDICATORS BANNER ===== */}
-      {i && (
+      {/* ===== GLOBAL INDICATORS BANNER (LIVE - from NOC) ===== */}
+      {noc && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -66,41 +78,51 @@ export function DashboardPage() {
             <GlobalIndicator
               icon={<AlertTriangle size={16} />}
               label="Risk Level"
-              value={i.global_indicators.network_risk_level}
-              color="danger"
+              value={noc.network_health.status}
+              color={noc.network_health.status === 'Critical' ? 'danger' : noc.network_health.status === 'Warning' ? 'warning' : 'success'}
             />
             <GlobalIndicator
               icon={<Zap size={16} />}
               label="Active Events"
-              value={i.global_indicators.active_congestion_events}
+              value={noc.network_health.congestion_events}
               color="warning"
             />
             <GlobalIndicator
               icon={<Target size={16} />}
-              label="Avg RCA Score"
-              value={i.global_indicators.average_rca_score}
+              label="Avg Utilization"
+              value={`${noc.network_health.avg_utilization}%`}
               color="accent"
             />
             <GlobalIndicator
               icon={<Crown size={16} />}
               label="Top Contributor"
-              value={i.global_indicators.top_contributor_ip}
+              value={noc.top_contributors?.[0]?.ip || '—'}
               color="primary"
               mono
             />
             <GlobalIndicator
               icon={<Clock size={16} />}
-              label="Last Detection"
-              value={i.global_indicators.last_detection_time}
+              label="Avg Latency"
+              value={`${noc.network_health.avg_latency_ms}ms`}
               color="info"
             />
             <GlobalIndicator
               icon={<Activity size={16} />}
-              label="Processing"
-              value={i.global_indicators.processing_time}
+              label="Devices Online"
+              value={`${noc.network_health.online_devices}/${noc.network_health.total_devices}`}
               color="success"
             />
           </div>
+          {noc.stats.real_devices_connected > 0 && (
+            <div className="mt-3 pt-3 border-t border-cyber-border flex items-center gap-4 text-xs">
+              <span className="flex items-center gap-1 text-cyber-success">
+                <span className="w-2 h-2 rounded-full bg-cyber-success animate-pulse"></span>
+                {noc.stats.real_devices_connected} Real Device(s) Connected
+              </span>
+              <span className="text-cyber-muted">·</span>
+              <span className="text-cyber-muted">{noc.stats.real_flows_ingested} flows ingested</span>
+            </div>
+          )}
         </motion.div>
       )}
 

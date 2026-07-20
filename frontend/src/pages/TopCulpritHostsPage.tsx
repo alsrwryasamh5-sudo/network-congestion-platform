@@ -12,6 +12,7 @@ import {
 import { Layout } from '../components/Layout';
 import { Card, Badge, StatCard, Skeleton } from '../components/Card';
 import { apiGet } from '../services/api';
+import { dashboardService } from '../services/dashboardService';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -26,16 +27,42 @@ export function TopCulpritHostsPage() {
 
   useEffect(() => {
     setLoading(true);
-    apiGet(`/ml/top-culprit-hosts?limit=50&hours=${hours}`)
-      .then((r) => {
-        setHosts(r.data.hosts || []);
-        setSummary({
-          total_hosts: r.data.total_hosts,
-          hours_back: r.data.hours_back,
-        });
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    // Use NOC data which includes both simulated and real connected devices
+    Promise.all([
+      apiGet(`/ml/top-culprit-hosts?limit=50&hours=${hours}`),
+      dashboardService.noc(),
+    ]).then(([culpritsRes, nocRes]) => {
+      const dbHosts = culpritsRes.data?.hosts || [];
+      const nocContributors = nocRes.data?.top_contributors || [];
+      // Merge: NOC contributors (which include real devices) take priority
+      const mergedHosts = nocContributors.map((c: any) => ({
+        rank: 0,
+        source_ip: c.ip,
+        host_type: c.is_real ? 'Real Connected Device' : 'Network Host',
+        event_count: c.traffic_contribution > 0 ? Math.ceil(c.traffic_contribution) : 1,
+        avg_culprit_score: c.culprit_score,
+        max_culprit_score: c.culprit_score,
+        avg_congestion_score: c.culprit_score / 100,
+        severity: c.culprit_score >= 75 ? 'critical' : c.culprit_score >= 50 ? 'high' : c.culprit_score >= 25 ? 'medium' : 'low',
+        protocol: c.is_real ? 'TCP' : 'mixed',
+        l4_dst_port: 0,
+        is_real: c.is_real,
+        reason: c.reason,
+        hostname: c.hostname,
+      }));
+      // Add DB hosts that aren't already in the merged list
+      const existingIPs = new Set(mergedHosts.map((h: any) => h.source_ip));
+      const additional = dbHosts.filter((h: any) => !existingIPs.has(h.source_ip));
+      const allHosts = [...mergedHosts, ...additional].map((h: any, i: number) => ({ ...h, rank: i + 1 }));
+
+      setHosts(allHosts);
+      setSummary({
+        total_hosts: allHosts.length,
+        hours_back: hours,
+        real_devices: nocRes.data?.stats?.real_devices_connected || 0,
+        real_flows: nocRes.data?.stats?.real_flows_ingested || 0,
+      });
+    }).catch(() => {}).finally(() => setLoading(false));
   }, [hours]);
 
   // Compute summary stats

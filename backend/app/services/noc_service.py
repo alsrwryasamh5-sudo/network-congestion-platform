@@ -169,12 +169,59 @@ def _vary(value: float, delta: float = 5.0, min_val: float = 0, max_val: float =
 
 
 def get_noc_status() -> Dict[str, Any]:
-    """Get complete NOC dashboard data - real-time network status."""
+    """Get complete NOC dashboard data - real-time network status.
+    Merges simulated data with real ingested flows from connected devices.
+    """
+    # Import here to avoid circular import
+    from app.services.ingestion_service import _ingestion_state
+
     now = datetime.now(timezone.utc)
     uptime = (now - _noc_state["started_at"]).total_seconds()
 
+    # ===== MERGE REAL DEVICES FROM INGESTION =====
+    # Get real devices that have sent flow data
+    real_devices = list(_ingestion_state.get("active_devices", {}).values())
+    real_recent_flows = _ingestion_state.get("recent_ingested", [])
+
+    # If real devices exist, merge them into NETWORK_DEVICES dynamically
+    merged_devices = list(NETWORK_DEVICES)  # copy simulated devices
+    for dev_info in real_devices:
+        device_id = dev_info.get("device_id", "unknown")
+        # Check if this device is already in our list (by ID)
+        existing = next((d for d in merged_devices if d["id"] == device_id), None)
+        if existing:
+            # Update existing device with real data
+            existing["status"] = "online"
+            existing["real_flows_sent"] = dev_info.get("flows_sent", 0)
+            existing["real_congested_flows"] = dev_info.get("flows_congested", 0)
+            existing["last_seen"] = dev_info.get("last_seen")
+        else:
+            # Add as new device
+            merged_devices.append({
+                "id": device_id[:20],  # truncate for display
+                "name": f"Connected Device: {device_id}",
+                "type": "Real Device",
+                "model": "Live Ingestion",
+                "ip": "dynamic",
+                "location": "External",
+                "role": "Connected",
+                "status": "online",
+                "cpu_usage": _vary(45.0, 10.0, 5, 95),
+                "memory_usage": _vary(55.0, 8.0, 20, 90),
+                "temperature": _vary(38.0, 2.0, 30, 50),
+                "uptime_hours": int(uptime / 3600),
+                "real_flows_sent": dev_info.get("flows_sent", 0),
+                "real_congested_flows": dev_info.get("flows_congested", 0),
+                "last_seen": dev_info.get("last_seen"),
+                "interfaces": [
+                    {"name": "ingest-0", "utilization": _vary(50.0, 15.0, 5, 100), "status": "active",
+                     "throughput_in": _vary(500, 200, 50, 1500), "throughput_out": _vary(400, 150, 50, 1200),
+                     "bandwidth_capacity": 1000},
+                ],
+            })
+
     # Update device metrics with random variation (simulating live data)
-    for device in NETWORK_DEVICES:
+    for device in merged_devices:
         device["cpu_usage"] = _vary(device["cpu_usage"], 3.0, 5, 100)
         device["memory_usage"] = _vary(device["memory_usage"], 2.0, 20, 95)
         device["temperature"] = _vary(device["temperature"], 1.0, 25, 55)
@@ -203,8 +250,23 @@ def get_noc_status() -> Dict[str, Any]:
         else:
             link["status"] = "active"
 
+    # Add real connected devices to topology
+    topology_nodes = [{"id": d["id"], "name": d["name"], "type": d["type"], "ip": d["ip"], "status": d["status"], "role": d["role"]} for d in merged_devices]
+    topology_links = list(TOPOLOGY_LINKS)
+    # Add links from real devices to R1 (core)
+    for dev in merged_devices:
+        if dev.get("real_flows_sent", 0) > 0 and dev["id"] not in ["R1", "R2", "SW1", "SW2", "FW1"]:
+            avg_util = min(95, 30 + dev.get("real_congested_flows", 0) * 5)
+            topology_links.append({
+                "from": "R1",
+                "to": dev["id"],
+                "label": f"Live: {dev.get('real_flows_sent', 0)} flows",
+                "utilization": avg_util,
+                "status": "congested" if avg_util >= 90 else "warning" if avg_util >= 75 else "active",
+            })
+
     # Calculate network health summary
-    all_interfaces = [iface for dev in NETWORK_DEVICES for iface in dev["interfaces"]]
+    all_interfaces = [iface for dev in merged_devices for iface in dev["interfaces"]]
     total_interfaces = len(all_interfaces)
     congested_ifaces = sum(1 for i in all_interfaces if i["status"] == "congested")
     warning_ifaces = sum(1 for i in all_interfaces if i["status"] == "warning")
@@ -215,9 +277,11 @@ def get_noc_status() -> Dict[str, Any]:
     total_throughput_out = sum(i["throughput_out"] for i in all_interfaces)
     total_throughput = total_throughput_in + total_throughput_out
 
-    avg_latency = round(np.mean([20 + i["utilization"] * 0.8 for i in all_interfaces]), 2)
-    avg_jitter = round(np.mean([5 + i["utilization"] * 0.3 for i in all_interfaces]), 2)
-    avg_packet_loss = round(np.mean([0.1 + max(0, i["utilization"] - 70) * 0.05 for i in all_interfaces]), 3)
+    # Factor in real congestion from ingested flows
+    real_congestion_boost = min(20, len(real_recent_flows) * 0.5)
+    avg_latency = round(np.mean([20 + i["utilization"] * 0.8 for i in all_interfaces]) + real_congestion_boost, 2)
+    avg_jitter = round(np.mean([5 + i["utilization"] * 0.3 for i in all_interfaces]) + real_congestion_boost * 0.3, 2)
+    avg_packet_loss = round(np.mean([0.1 + max(0, i["utilization"] - 70) * 0.05 for i in all_interfaces]) + (real_congestion_boost * 0.05), 3)
 
     # Determine overall network status
     if congested_ifaces >= 3 or avg_packet_loss > 2:
@@ -245,11 +309,11 @@ def get_noc_status() -> Dict[str, Any]:
 
     # Generate new congestion events and alerts
     _noc_state["total_packets_processed"] += random.randint(50000, 150000)
-    _noc_state["total_flows_analyzed"] += random.randint(100, 500)
+    _noc_state["total_flows_analyzed"] += random.randint(100, 500) + len(real_recent_flows)
 
     for iface in all_interfaces:
         if iface["status"] == "congested" and random.random() < 0.3:
-            device_name = next(d["name"] for d in NETWORK_DEVICES if iface in d["interfaces"])
+            device_name = next(d["name"] for d in merged_devices if iface in d["interfaces"])
             alert = {
                 "id": f"alert_{int(time.time() * 1000)}_{random.randint(1000, 9999)}",
                 "timestamp": now.isoformat(),
@@ -264,12 +328,31 @@ def get_noc_status() -> Dict[str, Any]:
             }
             _noc_state["alert_timeline"].insert(0, alert)
 
+    # Add real-flow congestion alerts from ingested data
+    for flow in real_recent_flows[:5]:
+        if flow.get("is_congested") and flow.get("rca_score", 0) >= 75:
+            alert = {
+                "id": f"real_alert_{flow.get('timestamp', '')}",
+                "timestamp": flow.get("timestamp", now.isoformat()),
+                "time": flow.get("timestamp", now.isoformat())[11:19] if flow.get("timestamp") else now.strftime("%H:%M:%S"),
+                "device": flow.get("device_id", "Unknown Device"),
+                "interface": "ingest-0",
+                "problem": f"Congestion from {flow.get('src_ip', 'unknown')}",
+                "severity": "critical" if flow.get("rca_score", 0) >= 85 else "high",
+                "action": flow.get("status", "monitoring"),
+                "confidence": round(flow.get("confidence", 0) * 100, 1),
+                "utilization": flow.get("rca_score", 0),
+            }
+            # Avoid duplicates
+            if not any(a["id"] == alert["id"] for a in _noc_state["alert_timeline"]):
+                _noc_state["alert_timeline"].insert(0, alert)
+
     # Keep only last 30 alerts
     _noc_state["alert_timeline"] = _noc_state["alert_timeline"][:30]
 
     # Active congestion events
     active_congestion = []
-    for dev in NETWORK_DEVICES:
+    for dev in merged_devices:
         for iface in dev["interfaces"]:
             if iface["status"] == "congested":
                 active_congestion.append({
@@ -283,15 +366,60 @@ def get_noc_status() -> Dict[str, Any]:
                     "detected_at": now.isoformat(),
                 })
 
+    # Add real congestion events from ingested flows
+    for flow in real_recent_flows[:10]:
+        if flow.get("is_congested"):
+            active_congestion.append({
+                "device": flow.get("device_id", "Real Device"),
+                "device_id": flow.get("device_id", "real"),
+                "interface": "ingest-0",
+                "utilization": flow.get("rca_score", 0),
+                "severity": "critical" if flow.get("rca_score", 0) >= 85 else "high",
+                "confidence": round(flow.get("confidence", 0) * 100, 1),
+                "congestion_probability": flow.get("probability", 0),
+                "detected_at": flow.get("timestamp", now.isoformat()),
+                "source_ip": flow.get("src_ip"),
+                "destination_ip": flow.get("dst_ip"),
+                "is_real": True,
+            })
+
     # SHAP features (with slight variation)
     shap_features = [
         {**f, "importance": round(f["importance"] * random.uniform(0.95, 1.05), 2)}
         for f in SHAP_FEATURES
     ]
 
+    # Build top contributors from BOTH simulated and real data
+    top_contributors = list(CONTRIBUTING_HOSTS)
+    # Add real culprits from ingested flows
+    real_culprits = {}
+    for flow in real_recent_flows:
+        if flow.get("is_congested") and flow.get("src_ip"):
+            ip = flow["src_ip"]
+            if ip not in real_culprits:
+                real_culprits[ip] = {
+                    "ip": ip,
+                    "mac": "live-data",
+                    "hostname": flow.get("device_id", "real-device"),
+                    "traffic_contribution": 0,
+                    "culprit_score": flow.get("rca_score", 0),
+                    "reason": flow.get("congestion_cause", "Detected via live ingestion"),
+                    "is_real": True,
+                    "device_id": flow.get("device_id"),
+                    "mitigation": flow.get("mitigation"),
+                }
+            real_culprits[ip]["traffic_contribution"] += 1
+    # Convert counts to percentages
+    total_real = sum(c["traffic_contribution"] for c in real_culprits.values()) or 1
+    for c in real_culprits.values():
+        c["traffic_contribution"] = round(c["traffic_contribution"] / total_real * 100, 1)
+
+    # Merge real culprits (real ones take priority)
+    top_contributors = list(real_culprits.values())[:5] + [c for c in top_contributors if c["ip"] not in real_culprits][:5]
+
     # Recommended actions for top contributors
     recommendations = []
-    for host in CONTRIBUTING_HOSTS[:3]:
+    for host in top_contributors[:3]:
         if host["culprit_score"] >= 85:
             action = "Block"
             priority = "critical"
@@ -318,7 +446,18 @@ def get_noc_status() -> Dict[str, Any]:
             "color": color,
             "reason": host["reason"],
             "traffic_contribution": host["traffic_contribution"],
+            "is_real": host.get("is_real", False),
+            "device_id": host.get("device_id"),
+            "mitigation": host.get("mitigation"),
         })
+
+    # Get ingestion stats
+    ingestion_stats = {
+        "total_ingested": _ingestion_state.get("total_ingested", 0),
+        "total_processed": _ingestion_state.get("total_processed", 0),
+        "total_congested": _ingestion_state.get("total_congested", 0),
+        "device_count": len(_ingestion_state.get("active_devices", {})),
+    }
 
     return {
         "timestamp": now.isoformat(),
@@ -339,33 +478,40 @@ def get_noc_status() -> Dict[str, Any]:
             "throughput_in": round(total_throughput_in, 1),
             "throughput_out": round(total_throughput_out, 1),
             "avg_utilization": round(avg_utilization, 1),
-            "total_devices": len(NETWORK_DEVICES),
-            "online_devices": sum(1 for d in NETWORK_DEVICES if d["status"] == "online"),
-            "warning_devices": sum(1 for d in NETWORK_DEVICES if d["status"] == "warning"),
+            "total_devices": len(merged_devices),
+            "online_devices": sum(1 for d in merged_devices if d["status"] == "online"),
+            "warning_devices": sum(1 for d in merged_devices if d["status"] == "warning"),
+            "real_connected_devices": len(real_devices),
+            "real_flows_ingested": ingestion_stats["total_ingested"],
+            "real_congested_flows": ingestion_stats["total_congested"],
         },
-        # Device Monitoring
-        "devices": NETWORK_DEVICES,
-        # Topology
+        # Device Monitoring (merged)
+        "devices": merged_devices,
+        # Topology (with real devices)
         "topology": {
-            "nodes": [{"id": d["id"], "name": d["name"], "type": d["type"], "ip": d["ip"], "status": d["status"], "role": d["role"]} for d in NETWORK_DEVICES],
-            "links": TOPOLOGY_LINKS,
+            "nodes": topology_nodes,
+            "links": topology_links,
         },
         # Real-time traffic history
         "traffic_history": _noc_state["traffic_history"][-30:],
-        # Congestion Detection
+        # Congestion Detection (with real events)
         "congestion_events": active_congestion,
-        # RCA - Top Contributing Hosts
-        "top_contributors": CONTRIBUTING_HOSTS,
+        # RCA - Top Contributing Hosts (merged with real)
+        "top_contributors": top_contributors,
         # SHAP Features
         "shap_features": shap_features,
-        # Recommended Actions
+        # Recommended Actions (with real host actions)
         "recommendations": recommendations,
-        # Alert Timeline
+        # Alert Timeline (with real alerts)
         "alert_timeline": _noc_state["alert_timeline"][:15],
+        # Real ingested flows (for live feed)
+        "real_flows": real_recent_flows[:20],
         # Statistics
         "stats": {
             "total_packets_processed": _noc_state["total_packets_processed"],
             "total_flows_analyzed": _noc_state["total_flows_analyzed"],
             "total_alerts": len(_noc_state["alert_timeline"]),
+            "real_devices_connected": ingestion_stats["device_count"],
+            "real_flows_ingested": ingestion_stats["total_ingested"],
         },
     }

@@ -13,6 +13,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { NotificationsPage } from './pages/NotificationsPage';
+import { UsersPage } from './pages/UsersPage';
 import { TopCulpritHostsPage } from './pages/TopCulpritHostsPage';
 import { LiveMonitoringPage } from './pages/LiveMonitoringPage';
 import { DeviceConnectionPage } from './pages/DeviceConnectionPage';
@@ -98,7 +99,7 @@ export default function App() {
         <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
         <Route path="/alerts" element={<ProtectedRoute><SimplePage title="Alerts Center" subtitle="View and manage all congestion alerts in one place." icon={AlertTriangle} comingSoon /></ProtectedRoute>} />
         <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
-        <Route path="/users" element={<ProtectedRoute><SimplePage title="User Management" subtitle="Manage user accounts, roles, and permissions." icon={Users} comingSoon /></ProtectedRoute>} />
+        <Route path="/users" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="/system" element={<ProtectedRoute><SimplePage title="System Health" subtitle="Monitor platform health, uptime, and resource usage." icon={Heart} comingSoon /></ProtectedRoute>} />
