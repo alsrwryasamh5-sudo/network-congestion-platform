@@ -143,11 +143,12 @@ def register_error_handlers(app):
             db.session.rollback()
         except Exception:
             pass
+        # Always include error detail for debugging
         return jsonify({
             "success": False,
             "error": {
                 "code": "UNEXPECTED_ERROR",
                 "message": "An unexpected error occurred.",
-                "detail": str(err)[:200] if app.debug else None,
+                "detail": str(err)[:300],
             },
         }), 500
