@@ -3,9 +3,9 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useDispatch, useSelector } from 'react-redux';
 import {
-  LayoutDashboard, Activity, Network, AlertTriangle, Search, GitBranch,
-  BarChart3, Brain, Database, FileText, Bell, Users, Settings, User,
-  Heart, LogOut, ChevronLeft, ChevronRight, Globe, Zap, Server, Crown, Radio, Upload, Monitor, Router,
+  LayoutDashboard, Activity, Network, AlertTriangle, GitBranch,
+  Brain, Database, FileText, Bell, Users, Settings, User,
+  LogOut, ChevronLeft, ChevronRight, Globe, Zap, Server, Crown, Radio, Upload, Monitor, Router, Target, Shield,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { RootState, AppDispatch } from '../store';
@@ -23,50 +23,38 @@ export function Sidebar() {
   const isAdmin = user?.role === 'admin';
   const isResearcher = user?.role === 'admin' || user?.role === 'researcher';
 
+  // 3 main sections - clean and focused
   const navSections = [
     {
-      title: t('nav.dashboard'),
+      title: language === 'ar' ? 'المراقبة والتحليل' : 'Monitoring & Analysis',
+      icon: <Activity size={12} />,
       items: [
-        { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: t('nav.overview') },
-        { to: '/noc', icon: <Monitor size={18} />, label: 'NOC Dashboard' },
-        { to: '/devices', icon: <Router size={18} />, label: 'Network Devices' },
-        { to: '/live', icon: <Radio size={18} />, label: 'مراقبة مباشرة' },
-        { to: '/ingest', icon: <Upload size={18} />, label: 'ربط الأجهزة' },
-        { to: '/analytics', icon: <Activity size={18} />, label: t('nav.analytics') },
-        { to: '/congestion', icon: <Network size={18} />, label: t('nav.congestion') },
-        { to: '/root-cause', icon: <AlertTriangle size={18} />, label: t('nav.rootCause') },
-        { to: '/top-culprits', icon: <Crown size={18} />, label: 'أكثر الأجهزة إسهاماً' },
-        { to: '/shap', icon: <GitBranch size={18} />, label: t('nav.shap') },
-        { to: '/performance', icon: <BarChart3 size={18} />, label: t('nav.performance') },
+        { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: language === 'ar' ? 'نظرة عامة' : 'Overview' },
+        { to: '/noc', icon: <Monitor size={18} />, label: language === 'ar' ? 'مركز العمليات' : 'NOC Dashboard' },
+        { to: '/devices', icon: <Router size={18} />, label: language === 'ar' ? 'أجهزة الشبكة' : 'Network Devices' },
+        { to: '/root-cause', icon: <Target size={18} />, label: language === 'ar' ? 'تحليل السبب الجذري' : 'Root Cause' },
+        { to: '/top-culprits', icon: <Crown size={18} />, label: language === 'ar' ? 'المسببون' : 'Top Culprits' },
+        { to: '/shap', icon: <GitBranch size={18} />, label: language === 'ar' ? 'تفسير SHAP' : 'SHAP Explain' },
       ],
     },
     {
-      title: t('nav.prediction'),
+      title: language === 'ar' ? 'الذكاء الاصطناعي' : 'AI & Operations',
+      icon: <Brain size={12} />,
       items: [
-        { to: '/prediction', icon: <Brain size={18} />, label: t('nav.prediction') },
-        ...(isResearcher ? [{ to: '/training', icon: <Zap size={18} />, label: t('nav.training') }] : []),
-        { to: '/datasets', icon: <Database size={18} />, label: t('nav.datasets') },
-        { to: '/reports', icon: <FileText size={18} />, label: t('nav.reports') },
+        { to: '/congestion', icon: <Network size={18} />, label: language === 'ar' ? 'كشف الازدحام' : 'Congestion Detect' },
+        ...(isResearcher ? [{ to: '/training', icon: <Zap size={18} />, label: language === 'ar' ? 'تدريب النموذج' : 'Training' }] : []),
+        { to: '/ingest', icon: <Upload size={18} />, label: language === 'ar' ? 'استقبال التدفقات' : 'Ingest Flows' },
+        { to: '/reports', icon: <FileText size={18} />, label: language === 'ar' ? 'التقارير' : 'Reports' },
       ],
     },
     {
-      title: t('nav.system'),
+      title: language === 'ar' ? 'الإدارة' : 'Management',
+      icon: <Settings size={12} />,
       items: [
-        { to: '/alerts', icon: <AlertTriangle size={18} />, label: t('nav.alerts') },
-        { to: '/notifications', icon: <Bell size={18} />, label: t('nav.notifications') },
-        ...(isAdmin ? [{ to: '/users', icon: <Users size={18} />, label: t('nav.users') }] : []),
-        { to: '/system', icon: <Heart size={18} />, label: t('nav.system') },
-        ...(isAdmin ? [{ to: '/logs', icon: <Search size={18} />, label: t('nav.logs') }] : []),
-      ],
-    },
-    {
-      title: t('nav.profile'),
-      items: [
-        { to: '/profile', icon: <User size={18} />, label: t('nav.profile') },
-        { to: '/settings', icon: <Settings size={18} />, label: t('nav.settings') },
-        { to: '/about', icon: <FileText size={18} />, label: t('nav.about') },
-        { to: '/help', icon: <Search size={18} />, label: t('nav.help') },
-        { to: '/feedback', icon: <FileText size={18} />, label: t('nav.feedback') },
+        { to: '/notifications', icon: <Bell size={18} />, label: language === 'ar' ? 'الإشعارات' : 'Notifications' },
+        ...(isAdmin ? [{ to: '/users', icon: <Users size={18} />, label: language === 'ar' ? 'المستخدمون' : 'Users' }] : []),
+        { to: '/profile', icon: <User size={18} />, label: language === 'ar' ? 'الملف الشخصي' : 'Profile' },
+        { to: '/settings', icon: <Settings size={18} />, label: language === 'ar' ? 'الإعدادات' : 'Settings' },
       ],
     },
   ];
@@ -99,13 +87,36 @@ export function Sidebar() {
         </button>
       </div>
 
+      {/* User info bar */}
+      {!collapsed && user && (
+        <div className="px-4 py-3 border-b border-cyber-border bg-cyber-bg/30">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-cyber-gradient flex items-center justify-center text-white text-xs font-bold">
+              {user.username?.[0]?.toUpperCase() || 'U'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium text-cyber-text truncate">{user.full_name || user.username}</div>
+              <div className="text-[10px] text-cyber-muted capitalize">{user.role}</div>
+            </div>
+            <div className="w-2 h-2 rounded-full bg-cyber-success animate-pulse" title="Online" />
+          </div>
+        </div>
+      )}
+
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto scrollbar-hide px-2 py-4 space-y-4">
+      <nav className="flex-1 overflow-y-auto scrollbar-hide px-2 py-3 space-y-4">
         {navSections.map((section) => (
           <div key={section.title}>
             {!collapsed && (
-              <div className="px-4 mb-1 text-[10px] uppercase tracking-wider text-cyber-muted font-semibold">
-                {section.title}
+              <div className="flex items-center gap-2 px-3 mb-2 text-[10px] uppercase tracking-wider text-cyber-muted font-semibold">
+                {section.icon}
+                <span>{section.title}</span>
+                <div className="flex-1 h-px bg-cyber-border/50 ml-1"></div>
+              </div>
+            )}
+            {collapsed && (
+              <div className="px-3 mb-2 mt-3">
+                <div className="h-px bg-cyber-border/50"></div>
               </div>
             )}
             <div className="space-y-1">
