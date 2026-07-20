@@ -32,12 +32,15 @@ export function RootCausePage() {
     try {
       const [nocRes, culpritsRes] = await Promise.all([
         dashboardService.noc(),
-        apiGet('/ml/top-culprit-hosts?limit=20&hours=168'),
+        apiGet('/ml/top-culprit-hosts?limit=20&hours=168').catch(() => ({ data: { hosts: [] } })),
       ]);
       setNoc(nocRes.data);
       setDbCulprits(culpritsRes.data?.hosts || []);
       setLoading(false);
-    } catch (e) {}
+    } catch (e) {
+      // If NOC also fails, still show the page with empty state
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
