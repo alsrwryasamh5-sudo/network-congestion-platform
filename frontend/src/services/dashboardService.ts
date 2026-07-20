@@ -11,4 +11,5 @@ export const dashboardService = {
   apiStats: () => apiGet('/dashboard/api-stats'),
   intelligence: () => apiGet('/dashboard/intelligence'),
   live: () => apiGet('/dashboard/live'),
+  noc: () => apiGet('/dashboard/noc'),
 };

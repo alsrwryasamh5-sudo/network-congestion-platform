@@ -17,6 +17,7 @@ from app.models.system_log import ActivityLog
 from app.utils.errors import NotFoundError
 from app.services.intelligence_data import get_full_intelligence_report
 from app.services.live_monitor import get_live_network_status
+from app.services.noc_service import get_noc_status
 from ._shared import auth_required
 
 dashboard_bp = Blueprint("dashboard", __name__, url_prefix="/api/v1/dashboard")
@@ -377,5 +378,20 @@ def live_monitoring():
     return {
         "success": True,
         "data": get_live_network_status(),
+    }
+
+
+@dashboard_bp.route("/noc", methods=["GET"])
+@auth_required()
+def noc_dashboard():
+    """
+    NOC (Network Operations Center) dashboard data.
+    Real-time network monitoring with devices, topology, congestion events,
+    SHAP features, RCA, and alert timeline.
+    Call this endpoint every 5 seconds for live NOC updates.
+    """
+    return {
+        "success": True,
+        "data": get_noc_status(),
     }
 

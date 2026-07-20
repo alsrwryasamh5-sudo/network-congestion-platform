@@ -16,6 +16,7 @@ import { NotificationsPage } from './pages/NotificationsPage';
 import { TopCulpritHostsPage } from './pages/TopCulpritHostsPage';
 import { LiveMonitoringPage } from './pages/LiveMonitoringPage';
 import { DeviceConnectionPage } from './pages/DeviceConnectionPage';
+import { NOCDashboardPage } from './pages/NOCDashboardPage';
 import { SimplePage, NotFoundPage, MaintenancePage } from './pages/SimplePage';
 import {
   Bell, Database, Settings, User, Heart, Search, FileText,
@@ -82,6 +83,7 @@ export default function App() {
 
         {/* Protected */}
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/noc" element={<ProtectedRoute><NOCDashboardPage /></ProtectedRoute>} />
         <Route path="/live" element={<ProtectedRoute><LiveMonitoringPage /></ProtectedRoute>} />
         <Route path="/devices" element={<ProtectedRoute><DeviceConnectionPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
