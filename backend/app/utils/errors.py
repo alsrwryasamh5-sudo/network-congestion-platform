@@ -137,10 +137,17 @@ def register_error_handlers(app):
     @app.errorhandler(Exception)
     def handle_unexpected(err):
         app.logger.exception("Unexpected exception")
+        # Rollback any failed database transaction
+        try:
+            from app.extensions import db
+            db.session.rollback()
+        except Exception:
+            pass
         return jsonify({
             "success": False,
             "error": {
                 "code": "UNEXPECTED_ERROR",
                 "message": "An unexpected error occurred.",
+                "detail": str(err)[:200] if app.debug else None,
             },
         }), 500
