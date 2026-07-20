@@ -18,6 +18,8 @@ import { TopCulpritHostsPage } from './pages/TopCulpritHostsPage';
 import { LiveMonitoringPage } from './pages/LiveMonitoringPage';
 import { DeviceConnectionPage } from './pages/DeviceConnectionPage';
 import { NOCDashboardPage } from './pages/NOCDashboardPage';
+import { NetworkDevicesPage } from './pages/NetworkDevicesPage';
+import { InterfaceMonitoringPage } from './pages/InterfaceMonitoringPage';
 import { SimplePage, NotFoundPage, MaintenancePage } from './pages/SimplePage';
 import {
   Bell, Database, Settings, User, Heart, Search, FileText,
@@ -86,7 +88,9 @@ export default function App() {
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/noc" element={<ProtectedRoute><NOCDashboardPage /></ProtectedRoute>} />
         <Route path="/live" element={<ProtectedRoute><LiveMonitoringPage /></ProtectedRoute>} />
-        <Route path="/devices" element={<ProtectedRoute><DeviceConnectionPage /></ProtectedRoute>} />
+        <Route path="/devices" element={<ProtectedRoute><NetworkDevicesPage /></ProtectedRoute>} />
+        <Route path="/devices/:id/interfaces" element={<ProtectedRoute><InterfaceMonitoringPage /></ProtectedRoute>} />
+        <Route path="/ingest" element={<ProtectedRoute><DeviceConnectionPage /></ProtectedRoute>} />
         <Route path="/analytics" element={<ProtectedRoute><AnalyticsPage /></ProtectedRoute>} />
         <Route path="/congestion" element={<ProtectedRoute><PredictionPage /></ProtectedRoute>} />
         <Route path="/root-cause" element={<ProtectedRoute><RootCausePage /></ProtectedRoute>} />

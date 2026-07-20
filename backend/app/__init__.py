@@ -12,7 +12,7 @@ from app.config import get_config
 from app.extensions import db, cache, cors, limiter
 from app.utils.errors import register_error_handlers
 from app.utils.logger import logger, setup_logger
-from app.blueprints import auth_bp, ml_bp, dashboard_bp, reports_bp, admin_bp, system_bp, ingest_bp
+from app.blueprints import auth_bp, ml_bp, dashboard_bp, reports_bp, admin_bp, system_bp, ingest_bp, devices_bp
 
 
 def create_app(config_name: str = None) -> Flask:
@@ -56,6 +56,7 @@ def create_app(config_name: str = None) -> Flask:
     app.register_blueprint(admin_bp)
     app.register_blueprint(system_bp)
     app.register_blueprint(ingest_bp)
+    app.register_blueprint(devices_bp)
 
     # --- Error handlers ---
     register_error_handlers(app)
