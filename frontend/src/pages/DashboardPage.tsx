@@ -2,23 +2,20 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import {
-  Activity, AlertTriangle, CheckCircle, Cpu, Database, Gauge,
-  Network, Shield, TrendingUp, Users, Zap, HardDrive, MemoryStick,
-  Server, Crown, ArrowUpRight, ArrowDownRight, Radio, Wifi,
-  Flame, Target, Lock, Eye, Ban, Clock,
+  Activity, AlertTriangle, CheckCircle, Cpu, Gauge, Network,
+  Shield, TrendingUp, Zap, Server, Crown, Radio, Wifi, Ban,
+  Flame, Target, Clock, ArrowRight, Eye, Monitor,
 } from 'lucide-react';
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
-  LineChart, Line, RadialBarChart, RadialBar, PolarAngleAxis,
-  RadarChart, PolarGrid, PolarAngleAxis as RPolarAngle, PolarRadiusAxis, Radar,
-  ComposedChart,
 } from 'recharts';
 import { Layout } from '../components/Layout';
-import { Card, StatCard, Badge, Skeleton } from '../components/Card';
+import { Card, StatCard, Badge } from '../components/Card';
 import { dashboardService } from '../services/dashboardService';
 import { deviceService } from '../services/deviceService';
 import { apiGet, apiPost } from '../services/api';
+import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
 
@@ -26,33 +23,24 @@ const COLORS = ['#0EA5E9', '#8B5CF6', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'
 
 export function DashboardPage() {
   const { t } = useTranslation();
-  const [overview, setOverview] = useState<any>(null);
-  const [health, setHealth] = useState<any>(null);
-  const [recent, setRecent] = useState<any[]>([]);
-  const [intel, setIntel] = useState<any>(null);
   const [noc, setNoc] = useState<any>(null);
   const [deviceOverview, setDeviceOverview] = useState<any>(null);
   const [ingestStatus, setIngestStatus] = useState<any>(null);
+  const [overview, setOverview] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = () => {
     Promise.all([
-      dashboardService.overview(),
-      dashboardService.networkHealth(),
-      dashboardService.recentPredictions(8),
-      dashboardService.intelligence(),
       dashboardService.noc(),
       deviceService.overview(),
       apiGet('/ingest/status'),
+      dashboardService.overview(),
     ])
-      .then(([o, h, r, i, n, d, ing]) => {
-        setOverview(o.data);
-        setHealth(h.data);
-        setRecent(r.data);
-        setIntel(i.data);
+      .then(([n, d, ing, o]) => {
         setNoc(n.data);
         setDeviceOverview(d.data);
         setIngestStatus(ing.data);
+        setOverview(o.data);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -60,163 +48,71 @@ export function DashboardPage() {
 
   useEffect(() => {
     fetchAll();
-    // Auto-refresh every 5 seconds for true live monitoring
     const interval = setInterval(fetchAll, 5000);
     return () => clearInterval(interval);
   }, []);
 
-  const i = intel; // shorthand
-  const severityData = overview
-    ? Object.entries(overview.severity_distribution).map(([name, value]) => ({ name, value }))
-    : [];
+  const nh = noc?.network_health;
+  const trafficHistory = noc?.traffic_history || [];
+  const congestionEvents = noc?.congestion_events || [];
+  const topContributors = noc?.top_contributors || [];
+  const stats = noc?.stats || {};
 
   return (
     <Layout title={t('nav.overview')}>
-      {/* ===== GLOBAL INDICATORS BANNER (LIVE - from NOC) ===== */}
-      {noc && (
+      {/* ===== LIVE STATUS BANNER ===== */}
+      {nh && (
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card p-4 mb-6 border-l-4 border-l-cyber-danger"
+          className="glass-card p-4 mb-6 border-l-4"
+          style={{ borderLeftColor: nh.status_color }}
         >
           <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-            <GlobalIndicator
-              icon={<AlertTriangle size={16} />}
-              label="Risk Level"
-              value={noc.network_health.status}
-              color={noc.network_health.status === 'Critical' ? 'danger' : noc.network_health.status === 'Warning' ? 'warning' : 'success'}
-            />
-            <GlobalIndicator
-              icon={<Zap size={16} />}
-              label="Active Events"
-              value={noc.network_health.congestion_events}
-              color="warning"
-            />
-            <GlobalIndicator
-              icon={<Target size={16} />}
-              label="Avg Utilization"
-              value={`${noc.network_health.avg_utilization}%`}
-              color="accent"
-            />
-            <GlobalIndicator
-              icon={<Crown size={16} />}
-              label="Top Contributor"
-              value={noc.top_contributors?.[0]?.ip || '—'}
-              color="primary"
-              mono
-            />
-            <GlobalIndicator
-              icon={<Clock size={16} />}
-              label="Avg Latency"
-              value={`${noc.network_health.avg_latency_ms}ms`}
-              color="info"
-            />
-            <GlobalIndicator
-              icon={<Activity size={16} />}
-              label="Devices Online"
-              value={`${noc.network_health.online_devices}/${noc.network_health.total_devices}`}
-              color="success"
-            />
+            <GlobalIndicator icon={<AlertTriangle size={16} />} label="Risk Level" value={nh.status} color={nh.status === 'Critical' ? 'danger' : nh.status === 'Warning' ? 'warning' : 'success'} />
+            <GlobalIndicator icon={<Zap size={16} />} label="Active Events" value={nh.congestion_events} color="warning" />
+            <GlobalIndicator icon={<Target size={16} />} label="Avg Utilization" value={`${nh.avg_utilization}%`} color="accent" />
+            <GlobalIndicator icon={<Crown size={16} />} label="Top Contributor" value={topContributors[0]?.ip || '—'} color="primary" mono />
+            <GlobalIndicator icon={<Clock size={16} />} label="Avg Latency" value={`${nh.avg_latency_ms}ms`} color="info" />
+            <GlobalIndicator icon={<Activity size={16} />} label="Devices Online" value={`${nh.online_devices}/${nh.total_devices}`} color="success" />
           </div>
-          {noc.stats.real_devices_connected > 0 && (
+          {stats.real_devices_connected > 0 && (
             <div className="mt-3 pt-3 border-t border-cyber-border flex items-center gap-4 text-xs">
               <span className="flex items-center gap-1 text-cyber-success">
                 <span className="w-2 h-2 rounded-full bg-cyber-success animate-pulse"></span>
-                {noc.stats.real_devices_connected} Real Device(s) Connected
+                {stats.real_devices_connected} Real Device(s) Connected
               </span>
               <span className="text-cyber-muted">·</span>
-              <span className="text-cyber-muted">{noc.stats.real_flows_ingested} flows ingested</span>
+              <span className="text-cyber-muted">{stats.real_flows_ingested} flows ingested</span>
             </div>
           )}
         </motion.div>
       )}
 
-      {/* Seed data prompt */}
-      {overview && overview.total_predictions === 0 && !loading && (
-        <Card className="mb-6 border-cyber-warning/30 bg-cyber-warning/5">
-          <div className="flex items-start gap-3">
-            <Zap size={20} className="text-cyber-warning flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <h4 className="font-semibold text-cyber-warning mb-1">لا توجد بيانات حية بعد</h4>
-              <p className="text-sm text-cyber-muted mb-3">
-                البيانات المعروضة هي من التحليل المرجعي للـ notebook الأصلي. لتعبئة الواجهات ببيانات حية من النموذج المُدرَّب، اضغط الزر أدناه.
-              </p>
-              <button
-                onClick={async () => {
-                  try {
-                    toast.loading('جاري تعبئة البيانات...', { id: 'seed' });
-                    const r = await apiPost('/ml/seed-database', {
-                      n_predictions: 200, congested_ratio: 0.4, hours_back: 72,
-                    });
-                    toast.success(`تم توليد ${r.data.predictions_created} تنبؤ بنجاح!`, { id: 'seed' });
-                    setTimeout(() => window.location.reload(), 1500);
-                  } catch { toast.error('فشل التعبئة', { id: 'seed' }); }
-                }}
-                className="btn-primary flex items-center gap-2"
-              >
-                <Zap size={16} /> تعبئة الواجهات بالبيانات الحية
-              </button>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* ===== LIVE NETWORK MONITORING OVERVIEW ===== */}
-      <SectionTitle icon={<Radio size={18} />} title="Live Network Monitoring" subtitle="بيانات حية من الأجهزة المُراقَبة - تتحدث كل 5 ثوانٍ" />
-
-      {/* Live stat cards from real devices + NOC */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-        <StatCard
-          title="Connected Devices"
-          value={deviceOverview?.total_devices ?? 0}
-          icon={<Server size={18} />}
-          color="primary"
-          delay={0}
-        />
-        <StatCard
-          title="Online Devices"
-          value={deviceOverview?.online_devices ?? 0}
-          icon={<CheckCircle size={18} />}
-          color="success"
-          delay={0.05}
-        />
-        <StatCard
-          title="Active Interfaces"
-          value={deviceOverview?.up_interfaces ?? 0}
-          icon={<Wifi size={18} />}
-          color="info"
-          delay={0.1}
-        />
-        <StatCard
-          title="Congested Interfaces"
-          value={deviceOverview?.congested_interfaces ?? 0}
-          icon={<AlertTriangle size={18} />}
-          color="danger"
-          delay={0.15}
-        />
-        <StatCard
-          title="Avg Latency"
-          value={noc ? `${noc.network_health.avg_latency_ms}ms` : '—'}
-          icon={<Clock size={18} />}
-          color="warning"
-          delay={0.2}
-        />
-        <StatCard
-          title="Throughput"
-          value={noc ? `${noc.network_health.total_throughput_mbps}` : '—'}
-          icon={<TrendingUp size={18} />}
-          color="accent"
-          delay={0.25}
-        />
+      {/* ===== QUICK NAVIGATION ===== */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <QuickNav to="/noc" icon={<Monitor size={20} />} label="NOC Dashboard" desc="Live monitoring" color="primary" />
+        <QuickNav to="/devices" icon={<Server size={20} />} label="Network Devices" desc="Manage devices" color="success" />
+        <QuickNav to="/root-cause" icon={<Target size={20} />} label="Root Cause" desc="RCA analysis" color="danger" />
+        <QuickNav to="/shap" icon={<Eye size={20} />} label="SHAP" desc="Explainability" color="accent" />
       </div>
 
-      {/* Live traffic charts */}
+      {/* ===== LIVE STAT CARDS ===== */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <StatCard title="Connected Devices" value={deviceOverview?.total_devices ?? 0} icon={<Server size={18} />} color="primary" delay={0} />
+        <StatCard title="Online Devices" value={deviceOverview?.online_devices ?? 0} icon={<CheckCircle size={18} />} color="success" delay={0.05} />
+        <StatCard title="Active Interfaces" value={deviceOverview?.up_interfaces ?? 0} icon={<Wifi size={18} />} color="info" delay={0.1} />
+        <StatCard title="Congested" value={deviceOverview?.congested_interfaces ?? 0} icon={<AlertTriangle size={18} />} color="danger" delay={0.15} />
+        <StatCard title="Avg Latency" value={nh ? `${nh.avg_latency_ms}ms` : '—'} icon={<Clock size={18} />} color="warning" delay={0.2} />
+        <StatCard title="Throughput" value={nh ? `${nh.total_throughput_mbps}` : '—'} icon={<TrendingUp size={18} />} color="accent" delay={0.25} />
+      </div>
+
+      {/* ===== LIVE TRAFFIC + INTERFACE STATUS ===== */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        {/* Live Throughput Timeline */}
         <Card title="Live Throughput (Real-Time)" icon={<TrendingUp size={18} />} className="lg:col-span-2">
-          {noc && noc.traffic_history && noc.traffic_history.length > 1 ? (
+          {trafficHistory.length > 1 ? (
             <ResponsiveContainer width="100%" height={250}>
-              <AreaChart data={noc.traffic_history}>
+              <AreaChart data={trafficHistory}>
                 <defs>
                   <linearGradient id="liveTIn" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#0EA5E9" stopOpacity={0.4} />
@@ -243,7 +139,6 @@ export function DashboardPage() {
           )}
         </Card>
 
-        {/* Interface Status Distribution (Live) */}
         <Card title="Interface Status (Live)" icon={<Wifi size={18} />}>
           {deviceOverview && deviceOverview.total_interfaces > 0 ? (
             <ResponsiveContainer width="100%" height={250}>
@@ -272,26 +167,20 @@ export function DashboardPage() {
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-[250px] flex items-center justify-center text-cyber-muted text-sm">
-              لا توجد واجهات مُراقَبة
-            </div>
+            <div className="h-[250px] flex items-center justify-center text-cyber-muted text-sm">لا توجد واجهات مُراقَبة</div>
           )}
         </Card>
       </div>
 
-      {/* Live Congestion Events from NOC */}
-      {noc && noc.congestion_events && noc.congestion_events.length > 0 && (
-        <Card title="Live Congestion Events" icon={<AlertTriangle size={18} />} className="mb-6">
+      {/* ===== LIVE CONGESTION EVENTS ===== */}
+      {congestionEvents.length > 0 && (
+        <Card title="Live Congestion Events" icon={<AlertTriangle size={18} />} className="mb-6"
+          action={<Link to="/root-cause" className="btn-ghost text-xs text-cyber-primary">View RCA →</Link>}
+        >
           <div className="space-y-2">
-            {noc.congestion_events.slice(0, 5).map((event: any, idx: number) => (
-              <div key={idx} className={clsx(
-                'flex items-center gap-3 p-3 rounded-xl border',
-                event.severity === 'critical' ? 'border-cyber-danger/30 bg-cyber-danger/5' : 'border-cyber-warning/30 bg-cyber-warning/5'
-              )}>
-                <div className={clsx(
-                  'w-9 h-9 rounded-lg flex items-center justify-center',
-                  event.severity === 'critical' ? 'bg-cyber-danger/15 text-cyber-danger' : 'bg-cyber-warning/15 text-cyber-warning'
-                )}>
+            {congestionEvents.slice(0, 5).map((event: any, idx: number) => (
+              <div key={idx} className={clsx('flex items-center gap-3 p-3 rounded-xl border', event.severity === 'critical' ? 'border-cyber-danger/30 bg-cyber-danger/5' : 'border-cyber-warning/30 bg-cyber-warning/5')}>
+                <div className={clsx('w-9 h-9 rounded-lg flex items-center justify-center', event.severity === 'critical' ? 'bg-cyber-danger/15 text-cyber-danger' : 'bg-cyber-warning/15 text-cyber-warning')}>
                   <Flame size={16} />
                 </div>
                 <div className="flex-1">
@@ -305,16 +194,14 @@ export function DashboardPage() {
                     {event.source_ip && ` · Source: ${event.source_ip}`}
                   </div>
                 </div>
-                <Badge variant={event.severity === 'critical' ? 'danger' : 'warning'} size="sm">
-                  {event.severity}
-                </Badge>
+                <Badge variant={event.severity === 'critical' ? 'danger' : 'warning'} size="sm">{event.severity}</Badge>
               </div>
             ))}
           </div>
         </Card>
       )}
 
-      {/* Live Ingestion Status */}
+      {/* ===== LIVE INGESTION STATUS ===== */}
       {ingestStatus && ingestStatus.total_ingested > 0 && (
         <Card title="Live Data Ingestion" icon={<Activity size={18} />} className="mb-6">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -342,369 +229,72 @@ export function DashboardPage() {
         </Card>
       )}
 
-      {/* ===== CULPRIT MONITORING ===== */}
-      {i && (
-        <>
-          <SectionTitle icon={<AlertTriangle size={18} />} title="Culprit Monitoring" subtitle="Identified network congestion sources" />
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <StatCard title="Critical Nodes" value={i.culprit_monitoring.summary_cards.critical_nodes} icon={<Flame size={18} />} color="danger" delay={0.4} />
-            <StatCard title="Attack Nodes" value={i.culprit_monitoring.summary_cards.attack_nodes} icon={<Ban size={18} />} color="warning" delay={0.45} />
-            <StatCard title="Heavy Users" value={i.culprit_monitoring.summary_cards.heavy_users} icon={<Server size={18} />} color="accent" delay={0.5} />
-            <StatCard title="Highest RCA Score" value={i.culprit_monitoring.summary_cards.highest_rca} icon={<Crown size={18} />} color="primary" delay={0.55} />
-          </div>
-
-          <Card title="Top Culprit Hosts" icon={<Crown size={18} />} className="mb-6" delay={0.6}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-cyber-muted text-xs border-b border-cyber-border">
-                    <th className="text-left py-2 px-2">#</th>
-                    <th className="text-left py-2 px-2">IP Address</th>
-                    <th className="text-left py-2 px-2">RCA Score</th>
-                    <th className="text-left py-2 px-2">Device Type</th>
-                    <th className="text-left py-2 px-2">Behavior</th>
-                    <th className="text-left py-2 px-2">Recommended Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {i.culprit_monitoring.culprit_table.map((host: any, idx: number) => (
-                    <motion.tr
-                      key={idx}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: 0.6 + idx * 0.03 }}
-                      className={clsx(
-                        'border-b border-cyber-border/40 hover:bg-cyber-bg/30 transition',
-                        host.rca_score >= 90 && 'bg-cyber-danger/5'
-                      )}
-                    >
-                      <td className="py-2.5 px-2">
-                        <div className={clsx(
-                          'w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold',
-                          idx < 3 ? 'bg-cyber-danger/20 text-cyber-danger' : 'bg-cyber-card text-cyber-muted'
-                        )}>
-                          {idx + 1}
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-2 font-mono text-cyber-text">{host.ip}</td>
-                      <td className="py-2.5 px-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-semibold" style={{ color: host.rca_score >= 90 ? '#EF4444' : host.rca_score >= 50 ? '#F59E0B' : '#10B981' }}>
-                            {host.rca_score.toFixed(1)}
-                          </span>
-                          <div className="w-16 h-1.5 bg-cyber-bg/60 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full" style={{
-                              width: `${host.rca_score}%`,
-                              background: host.rca_score >= 90 ? '#EF4444' : host.rca_score >= 50 ? '#F59E0B' : '#10B981',
-                            }} />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-2">
-                        <Badge variant={host.device_type.includes('Culprit') ? 'danger' : 'success'} size="sm">
-                          {host.device_type.includes('Culprit') ? '⚠️ Culprit' : '✅ Normal'}
-                        </Badge>
-                      </td>
-                      <td className="py-2.5 px-2 text-cyber-muted text-xs">{host.behavior}</td>
-                      <td className="py-2.5 px-2">
-                        <Badge variant={host.action.includes('Block') ? 'danger' : host.action.includes('Throttle') ? 'warning' : 'success'} size="sm">
-                          {host.action}
-                        </Badge>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </>
-      )}
-
-      {/* ===== THREAT DISTRIBUTION ===== */}
-      {i && (
-        <>
-          <SectionTitle icon={<Shield size={18} />} title="Threat Distribution" subtitle="Classification of detected threats" />
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-            {/* Threat Source Distribution */}
-            <Card title="Threat Source Distribution" icon={<AlertTriangle size={18} />} delay={0.65}>
-              <ResponsiveContainer width="100%" height={250}>
-                <PieChart>
-                  <Pie
-                    data={i.threat_distribution.threat_sources}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={100}
-                    label={(entry: any) => `${entry.name}: ${entry.value}`}
-                  >
-                    {i.threat_distribution.threat_sources.map((d: any, idx: number) => (
-                      <Cell key={idx} fill={d.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ background: '#131B30', border: '1px solid #1E2A47', borderRadius: '12px', color: '#E2E8F0' }} />
-                  <Legend wrapperStyle={{ fontSize: '11px' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </Card>
-
-            {/* Attack Categories */}
-            <Card title="Attack Categories" icon={<Ban size={18} />} delay={0.7}>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={i.threat_distribution.attack_categories} layout="vertical" margin={{ left: 80 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1E2A47" />
-                  <XAxis type="number" stroke="#64748B" fontSize={11} />
-                  <YAxis type="category" dataKey="type" stroke="#64748B" fontSize={11} width={80} />
-                  <Tooltip contentStyle={{ background: '#131B30', border: '1px solid #1E2A47', borderRadius: '12px', color: '#E2E8F0' }} />
-                  <Bar dataKey="count" radius={[0, 8, 8, 0]}>
-                    {i.threat_distribution.attack_categories.map((_: any, idx: number) => (
-                      <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </Card>
-          </div>
-        </>
-      )}
-
-      {/* ===== TRAFFIC INTELLIGENCE (SHAP) ===== */}
-      {i && (
-        <>
-          <SectionTitle icon={<Eye size={18} />} title="Traffic Intelligence" subtitle="Top features contributing to congestion (SHAP)" />
-
-          <Card title="SHAP Feature Importance" icon={<Target size={18} />} className="mb-6" delay={0.75}>
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={i.traffic_intelligence.top_features} layout="vertical" margin={{ left: 150 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A47" />
-                <XAxis type="number" stroke="#64748B" fontSize={11} unit="%" />
-                <YAxis type="category" dataKey="feature" stroke="#64748B" fontSize={10} width={150} />
-                <Tooltip contentStyle={{ background: '#131B30', border: '1px solid #1E2A47', borderRadius: '12px', color: '#E2E8F0' }} formatter={(v: any) => [`${v}%`, 'Importance']} />
-                <Bar dataKey="importance" radius={[0, 8, 8, 0]}>
-                  {i.traffic_intelligence.top_features.map((_: any, idx: number) => (
-                    <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-        </>
-      )}
-
-      {/* ===== MITIGATION EFFECTIVENESS ===== */}
-      {i && (
-        <>
-          <SectionTitle icon={<CheckCircle size={18} />} title="Mitigation Effectiveness" subtitle="Impact of applied mitigation strategies" />
-
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-            <StatCard title="Bandwidth Saved" value={i.mitigation_effectiveness.summary_cards.bandwidth_saved} icon={<HardDrive size={18} />} color="success" delay={0.8} />
-            <StatCard title="Latency Reduction" value={`${i.mitigation_effectiveness.summary_cards.latency_reduction}%`} icon={<ArrowDownRight size={18} />} color="primary" delay={0.82} />
-            <StatCard title="Jitter Reduction" value={`${i.mitigation_effectiveness.summary_cards.jitter_reduction}%`} icon={<ArrowDownRight size={18} />} color="accent" delay={0.84} />
-            <StatCard title="Packet Loss Reduction" value={`${i.mitigation_effectiveness.summary_cards.packet_loss_reduction}%`} icon={<ArrowDownRight size={18} />} color="warning" delay={0.86} />
-            <StatCard title="QoS Restoration" value={`${i.mitigation_effectiveness.summary_cards.qos_restoration}%`} icon={<Shield size={18} />} color="info" delay={0.88} />
-          </div>
-
-          <Card title="Normal vs Culprit Network Behaviour" icon={<Activity size={18} />} className="mb-6" delay={0.9}>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={i.mitigation_effectiveness.behavior_comparison}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1E2A47" />
-                <XAxis dataKey="metric" stroke="#64748B" fontSize={10} />
-                <YAxis stroke="#64748B" fontSize={10} />
-                <Tooltip contentStyle={{ background: '#131B30', border: '1px solid #1E2A47', borderRadius: '12px', color: '#E2E8F0' }} />
-                <Legend wrapperStyle={{ fontSize: '11px' }} />
-                <Bar dataKey="normal" name="Normal Hosts" fill="#10B981" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="culprit" name="Culprit Hosts" fill="#EF4444" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-        </>
-      )}
-
-      {/* ===== AI MODEL STATUS ===== */}
-      {i && (
-        <>
-          <SectionTitle icon={<Cpu size={18} />} title="AI Model Status" subtitle="Machine learning model performance" />
-
-          <Card className="mb-6" delay={0.95}>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="text-center p-4 rounded-xl bg-cyber-bg/40">
-                <div className="w-12 h-12 rounded-xl bg-cyber-accent/15 text-cyber-accent flex items-center justify-center mx-auto mb-2">
-                  <Cpu size={20} />
+      {/* ===== TOP CONTRIBUTORS PREVIEW ===== */}
+      {topContributors.length > 0 && (
+        <Card title="Top Culprit Hosts" icon={<Crown size={18} />} className="mb-6"
+          action={<Link to="/top-culprits" className="btn-ghost text-xs text-cyber-primary">View All →</Link>}
+        >
+          <div className="space-y-2">
+            {topContributors.slice(0, 5).map((host: any, i: number) => (
+              <div key={i} className="flex items-center gap-3 p-3 rounded-xl bg-cyber-bg/40 border border-cyber-border">
+                <div className={clsx('w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold', i < 3 ? 'bg-cyber-danger/20 text-cyber-danger' : 'bg-cyber-card text-cyber-muted')}>#{i + 1}</div>
+                <div className="flex-1">
+                  <div className="font-mono text-sm text-cyber-text">{host.ip}</div>
+                  <div className="text-[10px] text-cyber-muted">{host.hostname} · {host.reason}</div>
                 </div>
-                <div className="text-xs text-cyber-muted">Model</div>
-                <div className="text-sm font-bold text-cyber-text">{i.ai_model_status.model}</div>
-                <div className="text-[10px] text-cyber-muted mt-1">{i.ai_model_status.architecture}</div>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-cyber-bg/40">
-                <div className="w-12 h-12 rounded-xl bg-cyber-success/15 text-cyber-success flex items-center justify-center mx-auto mb-2">
-                  <Target size={20} />
+                <div className="text-right">
+                  <div className="font-mono font-bold text-sm" style={{ color: host.culprit_score >= 85 ? '#EF4444' : host.culprit_score >= 70 ? '#F59E0B' : '#10B981' }}>
+                    {host.culprit_score?.toFixed(1)}
+                  </div>
+                  <div className="text-[10px] text-cyber-muted">Culprit Score</div>
                 </div>
-                <div className="text-xs text-cyber-muted">Accuracy</div>
-                <div className="text-2xl font-bold text-cyber-success">{i.ai_model_status.accuracy}%</div>
+                {host.is_real && <Badge variant="success" size="sm">REAL</Badge>}
               </div>
-              <div className="text-center p-4 rounded-xl bg-cyber-bg/40">
-                <div className="w-12 h-12 rounded-xl bg-cyber-primary/15 text-cyber-primary flex items-center justify-center mx-auto mb-2">
-                  <Gauge size={20} />
-                </div>
-                <div className="text-xs text-cyber-muted">F1-Score</div>
-                <div className="text-2xl font-bold text-cyber-primary">{(i.ai_model_status.f1_score * 100).toFixed(2)}%</div>
-              </div>
-              <div className="text-center p-4 rounded-xl bg-cyber-bg/40">
-                <div className="w-12 h-12 rounded-xl bg-cyber-warning/15 text-cyber-warning flex items-center justify-center mx-auto mb-2">
-                  <TrendingUp size={20} />
-                </div>
-                <div className="text-xs text-cyber-muted">ROC-AUC</div>
-                <div className="text-2xl font-bold text-cyber-warning">{(i.ai_model_status.roc_auc * 100).toFixed(2)}%</div>
-              </div>
-            </div>
-          </Card>
-        </>
-      )}
-
-      {/* ===== LIVE DATA SECTION (if available) ===== */}
-      {overview && overview.total_predictions > 0 && (
-        <>
-          <SectionTitle icon={<Radio size={18} />} title="Live Monitoring" subtitle="Real-time data from trained model" />
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-            {/* Network Health */}
-            <Card title="Network Health (Live)" icon={<Network size={18} />} delay={1.0}>
-              {health && health.source !== 'no_data' ? (
-                <ResponsiveContainer width="100%" height={250}>
-                  <AreaChart data={health.labels?.map((label: string, idx: number) => ({
-                    time: label,
-                    latency: health.latency_ms?.[idx]?.value || 0,
-                    jitter: health.jitter_ms?.[idx] || 0,
-                  }))}>
-                    <defs>
-                      <linearGradient id="liveLat" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#0EA5E9" stopOpacity={0.4} />
-                        <stop offset="100%" stopColor="#0EA5E9" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1E2A47" />
-                    <XAxis dataKey="time" stroke="#64748B" fontSize={10} />
-                    <YAxis stroke="#64748B" fontSize={10} />
-                    <Tooltip contentStyle={{ background: '#131B30', border: '1px solid #1E2A47', borderRadius: '12px', color: '#E2E8F0' }} />
-                    <Legend wrapperStyle={{ fontSize: '11px' }} />
-                    <Area type="monotone" dataKey="latency" name="Latency (ms)" stroke="#0EA5E9" fill="url(#liveLat)" strokeWidth={2} />
-                    <Area type="monotone" dataKey="jitter" name="Jitter (ms)" stroke="#8B5CF6" strokeWidth={2} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-[250px] flex items-center justify-center text-cyber-muted text-sm">{t('common.noData')}</div>
-              )}
-            </Card>
-
-            {/* Severity Distribution (Live) */}
-            <Card title="Severity Distribution (Live)" icon={<AlertTriangle size={18} />} delay={1.05}>
-              {severityData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={250}>
-                  <PieChart>
-                    <Pie data={severityData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3}>
-                      {severityData.map((_: any, idx: number) => (
-                        <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: '#131B30', border: '1px solid #1E2A47', borderRadius: '12px', color: '#E2E8F0' }} />
-                    <Legend wrapperStyle={{ fontSize: '11px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="h-[250px] flex items-center justify-center text-cyber-muted text-sm">{t('common.noData')}</div>
-              )}
-            </Card>
+            ))}
           </div>
-
-          {/* Recent Predictions */}
-          <Card title={t('dashboard.recentPredictions')} icon={<Activity size={18} />} delay={1.1}
-            action={<a href="/prediction" className="btn-ghost text-xs text-cyber-primary">View all →</a>}
-          >
-            {recent.length === 0 ? (
-              <div className="text-center py-12 text-cyber-muted text-sm">{t('common.noData')}</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-cyber-muted text-xs border-b border-cyber-border">
-                      <th className="text-left py-2 px-2">ID</th>
-                      <th className="text-left py-2 px-2">Status</th>
-                      <th className="text-left py-2 px-2">Confidence</th>
-                      <th className="text-left py-2 px-2">Severity</th>
-                      <th className="text-left py-2 px-2">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recent.slice(0, 6).map((p, idx) => (
-                      <tr key={idx} className="border-b border-cyber-border/40 hover:bg-cyber-bg/30">
-                        <td className="py-2.5 px-2 text-cyber-text font-mono">#{p.id}</td>
-                        <td className="py-2.5 px-2">
-                          <Badge variant={p.is_congested ? 'danger' : 'success'}>
-                            {p.is_congested ? t('prediction.congested') : t('prediction.normal')}
-                          </Badge>
-                        </td>
-                        <td className="py-2.5 px-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 h-1.5 bg-cyber-bg/60 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${(p.confidence || 0) * 100}%`, background: p.is_congested ? '#EF4444' : '#10B981' }} />
-                            </div>
-                            <span className="text-cyber-muted text-xs">{((p.confidence || 0) * 100).toFixed(1)}%</span>
-                          </div>
-                        </td>
-                        <td className="py-2.5 px-2">
-                          {p.severity ? <Badge variant={p.severity === 'critical' ? 'danger' : p.severity === 'high' ? 'warning' : p.severity === 'medium' ? 'info' : 'success'} size="sm">{p.severity}</Badge> : <span className="text-cyber-muted text-xs">—</span>}
-                        </td>
-                        <td className="py-2.5 px-2 text-cyber-muted text-xs">{p.created_at ? new Date(p.created_at).toLocaleTimeString() : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Card>
-        </>
+        </Card>
       )}
     </Layout>
   );
 }
 
-// ===== Helper Components =====
-
-function SectionTitle({ icon, title, subtitle }: { icon: any; title: string; subtitle: string }) {
+function QuickNav({ to, icon, label, desc, color }: any) {
+  const colorMap: Record<string, string> = {
+    primary: 'bg-cyber-primary/15 text-cyber-primary',
+    success: 'bg-cyber-success/15 text-cyber-success',
+    danger: 'bg-cyber-danger/15 text-cyber-danger',
+    accent: 'bg-cyber-accent/15 text-cyber-accent',
+  };
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="flex items-center gap-3 mb-4 mt-2"
-    >
-      <div className="w-9 h-9 rounded-xl bg-cyber-gradient flex items-center justify-center text-white">
-        {icon}
-      </div>
-      <div>
-        <h2 className="text-lg font-bold text-cyber-text">{title}</h2>
-        <p className="text-xs text-cyber-muted">{subtitle}</p>
-      </div>
-    </motion.div>
+    <Link to={to} className="block">
+      <Card className="hover:border-cyber-primary/40 transition cursor-pointer">
+        <div className="flex items-center gap-3">
+          <div className={clsx('w-12 h-12 rounded-xl flex items-center justify-center', colorMap[color])}>
+            {icon}
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-cyber-text">{label}</div>
+            <div className="text-xs text-cyber-muted">{desc}</div>
+          </div>
+          <ArrowRight size={16} className="text-cyber-muted" />
+        </div>
+      </Card>
+    </Link>
   );
 }
 
 function GlobalIndicator({ icon, label, value, color, mono }: any) {
   const colorMap: Record<string, string> = {
-    primary: 'text-cyber-primary',
-    accent: 'text-cyber-accent',
-    success: 'text-cyber-success',
-    warning: 'text-cyber-warning',
-    danger: 'text-cyber-danger',
-    info: 'text-cyber-info',
+    primary: 'text-cyber-primary', accent: 'text-cyber-accent',
+    success: 'text-cyber-success', warning: 'text-cyber-warning',
+    danger: 'text-cyber-danger', info: 'text-cyber-info',
   };
   return (
     <div className="flex items-center gap-2">
-      <div className={`${colorMap[color]}`}>{icon}</div>
+      <div className={colorMap[color]}>{icon}</div>
       <div>
         <div className="text-[10px] uppercase tracking-wider text-cyber-muted">{label}</div>
-        <div className={`text-sm font-bold ${colorMap[color]} ${mono ? 'font-mono' : ''}`}>{value}</div>
+        <div className={clsx('text-sm font-bold', colorMap[color], mono && 'font-mono')}>{value}</div>
       </div>
     </div>
   );
