@@ -715,14 +715,17 @@ def top_culprit_hosts():
     """
     Get the top hosts contributing to network congestion.
     Aggregates congestion events by source IP, sorted by culprit score.
+    Returns empty list on any error to prevent page crashes.
     """
     limit = min(int(request.args.get("limit", 20)), 100)
     hours = int(request.args.get("hours", 168))  # default 7 days
 
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
 
-    # Aggregate by source_ip - use subquery for PostgreSQL compatibility
     from sqlalchemy import func, desc
+
+    # Safe query with full error handling
+    rows = []
     try:
         rows = (
             db.session.query(
@@ -743,31 +746,45 @@ def top_culprit_hosts():
         )
     except Exception as e:
         logger.warning(f"top_culprit_hosts query failed: {e}")
+        db.session.rollback()
         rows = []
 
-    # Get host types from HOST_PROFILES in seeder_service
-    from app.services.seeder_service import HOST_PROFILES
+    # Safe host type lookup
+    HOST_PROFILES = []
+    try:
+        from app.services.seeder_service import HOST_PROFILES as HP
+        HOST_PROFILES = HP
+    except Exception:
+        pass
+
     def get_host_type(ip: str) -> str:
-        for p in HOST_PROFILES:
-            if ip.startswith(p["ip_prefix"]):
-                return p["type"]
+        try:
+            for p in HOST_PROFILES:
+                if ip and ip.startswith(p["ip_prefix"]):
+                    return p["type"]
+        except Exception:
+            pass
         return "Unknown"
 
     hosts = []
     for i, row in enumerate(rows, 1):
-        avg_score = float(row.avg_culprit_score or 0)
-        hosts.append({
-            "rank": i,
-            "source_ip": row.source_ip,
-            "host_type": get_host_type(row.source_ip),
-            "event_count": int(row.event_count),
-            "avg_culprit_score": round(avg_score, 2),
-            "max_culprit_score": round(float(row.max_culprit_score or 0), 2),
-            "avg_congestion_score": round(float(row.avg_congestion_score or 0), 4),
-            "severity": "critical" if avg_score >= 85 else "high" if avg_score >= 70 else "medium" if avg_score >= 50 else "low",
-            "protocol": "mixed",
-            "l4_dst_port": 0,
-        })
+        try:
+            avg_score = float(row.avg_culprit_score or 0)
+            hosts.append({
+                "rank": i,
+                "source_ip": row.source_ip or "unknown",
+                "host_type": get_host_type(row.source_ip),
+                "event_count": int(row.event_count or 0),
+                "avg_culprit_score": round(avg_score, 2),
+                "max_culprit_score": round(float(row.max_culprit_score or 0), 2),
+                "avg_congestion_score": round(float(row.avg_congestion_score or 0), 4),
+                "severity": "critical" if avg_score >= 85 else "high" if avg_score >= 70 else "medium" if avg_score >= 50 else "low",
+                "protocol": "mixed",
+                "l4_dst_port": 0,
+            })
+        except Exception as e:
+            logger.warning(f"Error processing culprit row {i}: {e}")
+            continue
 
     return {
         "success": True,
